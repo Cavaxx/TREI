@@ -120,6 +120,14 @@ def _cmd_kernel_smoke(args: argparse.Namespace) -> int:
                 print(json.dumps({"cleanup": exc.to_dict()}, ensure_ascii=False), file=sys.stderr)
 
 
+def _cmd_pilot(args: argparse.Namespace) -> int:
+    from app.acquisition.pilot import run_pilot
+
+    report = run_pilot(store_path=args.store, budget_path=args.budget)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["status"] == "completed" else (1 if report["status"] == "partial" else 2)
+
+
 def main(argv: list[str] | None = None) -> int:
     load_env_file()
     parser = argparse.ArgumentParser(prog="trei-acquire", description="TREI acquisition CLI")
@@ -138,6 +146,11 @@ def main(argv: list[str] | None = None) -> int:
     p_smoke = sub.add_parser("kernel-smoke", help="open, read and release one Kernel session")
     p_smoke.add_argument("--url", default=None)
     p_smoke.set_defaults(func=_cmd_kernel_smoke)
+
+    p_pilot = sub.add_parser("pilot", help="run the ISPAT pilot acquisition (requires KERNEL_API_KEY)")
+    p_pilot.add_argument("--store", default=None)
+    p_pilot.add_argument("--budget", default=None)
+    p_pilot.set_defaults(func=_cmd_pilot)
 
     args = parser.parse_args(argv)
     return args.func(args)

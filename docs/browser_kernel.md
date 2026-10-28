@@ -97,14 +97,28 @@ sintetici restano solo nei fixture/endpoint marcati demo.
 
 ## 6. Stato live (28 ottobre 2026)
 
-- **Non eseguito**: smoke test Kernel e pilota reale. `KERNEL_API_KEY` è vuota nel
-  template (la chiave va impostata localmente in `.env`) e l'host ISPAT
-  `www.statistica.provincia.tn.it` non risponde da questa macchina (timeout); il
-  portale reale è `statweb.provincia.tn.it/annuario/`, con navigazione ASP.NET
-  `__doPostBack`.
-- **Correzione fonte**: nell'annuario corrente il capitolo V è «Giustizia»; i dati
-  immobiliari stanno nel cap. IX «Economia». Il riferimento storico a «V.07
-  Compravendite immobiliari e mutui» è superato e il suo id/export resta da
-  confermare live. I.26 «Numero di famiglie per comunità di valle» copre
-  1990–2024, quindi ΔH/Δ²H sarebbero calcolabili al più fino al 2024, con
-  2025–2026 fuori copertura (non interpolati).
+- **Smoke test Kernel: eseguito e superato.** `kernel-smoke` su
+  `https://statweb.provincia.tn.it/annuario/` ha aperto una sessione, letto il
+  titolo (`ISPAT - Annuario on-line`) e rilasciato la sessione (0 sessioni attive
+  dopo il run).
+- **Pilota ISPAT: eseguito.** `python -m app.acquisition.cli pilot` acquisisce
+  dall'annuario (`statweb.provincia.tn.it/annuario/`, sessioni ASP.NET cookieless
+  via browser Kernel):
+  - `V.07` (`tavola.aspx?idt=5.07`, cap. V «Giustizia») «Compravendite immobiliari
+    e mutui (2000-2023)», Fonte Istat → 27 osservazioni (9 anni × 3 indicatori:
+    compravendite residenziali, mutui residenziali, mutui economici).
+  - `I.26` (`tavola.aspx?idt=1.26`) «Numero di famiglie per comunità di valle
+    (1990-2024)» → 102 osservazioni (17 territori × 6 annate effettivamente
+    renderizzate: 1990, 2010, 2015, 2020, 2023, 2024).
+  - Totale 129 osservazioni, idempotenza verificata (secondo run: `stored=0`).
+- **Nota corretta su V.07**: la tavola esiste ancora con lo stesso codice, sotto il
+  cap. V «Giustizia» (atti notarili); il riferimento «V.07 Compravendite immobiliari
+  e mutui (2000-2023)» è quindi **valido**, con id `idt=5.07`.
+- **Copertura**: la serie famiglie renderizzata mostra solo 6 annate, quindi
+  ΔH/Δ²H sono calcolabili solo sulle annate presenti (nessuna interpolazione);
+  2025 e 2026 restano fuori copertura. La vista renderizzata di I.26 supera da
+  sola il limite pilota di 100 record (serve `TREI_BROWSER_MAX_RECORDS_PER_SOURCE`
+  più alto o un sottoinsieme).
+- **Licenza**: `robots.txt` dà 404 (nessuna regola di crawling), ma la licenza di
+  riuso dei dati ISPAT resta da confermare (`terms_verified: false` nel registro).
+

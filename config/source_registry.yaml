@@ -356,15 +356,15 @@ sources:
     quality_estimate: high
     duplication_risk: low
     last_verified: "2026-10-28"
-    notes: "Annuario on-line at statweb.provincia.tn.it/annuario/ (ASP.NET WebForms). Chapter IX 'Economia' holds real-estate tables; the old 'V.07 Compravendite immobiliari e mutui' reference is superseded: chapter V is now 'Giustizia'. robots.txt returns 404 => no crawl rules, NOT a reuse licence. I.26 'Numero di famiglie per comunita' di valle' covers 1990-2024."
+    notes: "Annuario on-line at statweb.provincia.tn.it/annuario/ (ASP.NET WebForms, cookieless session). Tables are at tavola.aspx?idt=N.NN and render only inside the same session (a plain GET answers 'sessione scaduta!'). V.07 'Compravendite immobiliari e mutui (2000-2023)' is under cap. V 'Giustizia', idt=5.07, Fonte Istat. I.26 'Numero di famiglie per comunita' di valle' (1990-2024) is idt=1.26; the rendered view shows a subset of years. robots.txt returns 404 => no crawl rules, NOT a reuse licence."
     acquisition:
       requires_browser: true
-      browser_reason: "TreeView via __doPostBack + __VIEWSTATE; table id and export format still unverified"
+      browser_reason: "cookieless ASP.NET session + postback; direct HTTP GET of a table page returns 'sessione scaduta!'"
       urls:
         - https://statweb.provincia.tn.it/annuario/
-      indicators:
-        households: "I.26 Numero di famiglie per comunita' di valle (1990-2024)"
-        transactions_mortgages: "cap. IX (ex V.07) - to be confirmed live"
+      tables:
+        - {id: "5.07", name: "V.07", title: "Compravendite immobiliari e mutui (2000-2023)"}
+        - {id: "1.26", name: "I.26", title: "Numero di famiglie per comunita' di valle (1990-2024)"}
       terms_verified: false
 
   - name: omi_agenzia_entrate
