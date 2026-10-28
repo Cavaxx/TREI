@@ -1,0 +1,12 @@
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.git
+.gitignore
+*.egg-info
+.idea
+.vscode
+volumes
+secrets

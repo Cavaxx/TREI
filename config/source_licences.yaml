@@ -1,0 +1,42 @@
+# Trentino Real Estate Intelligence - Licence / Permission Register
+# ================================================================
+# Records the agreements that authorise AUTOMATED access to a source.
+#
+# Absolute rule enforced by app/fetchers/licence.py:
+#     no active licence record here  ->  no automated request
+#
+# Where open data suffices (ISTAT, OMI, Agenzia Entrate NTN, Banca d'Italia,
+# BCE, Eurostat, ISPAT) no entry is needed: tier-3 sources are covered by their
+# own public licence and are fetched through OpenDataAdapter.
+#
+# Fill an entry in ONLY after a real agreement/authorisation exists. Never add a
+# record "to make the adapter run": that would defeat the entire control.
+# Runbook: docs/authorized_feeds.md
+
+meta:
+  register_version: "1.0.0"
+  last_reviewed: "2026-10-03"
+  # Credentials are NEVER stored here. They come from the environment
+  # (TREI_<SOURCE>_API_KEY, ...) and are resolved by app/fetchers/credentials.py.
+
+licences: []
+
+# ---------------------------------------------------------------------------
+# Template - copy, fill in, and uncomment once the contract is signed.
+#
+# - source: immobiliare_it          # must match config/source_registry.yaml
+#   grantor: "Immobiliare.it S.p.A."
+#   contract_ref: "TREI-2026-001"
+#   valid_from: "2026-11-01"
+#   valid_to: "2027-10-31"          # omit for open-ended
+#   endpoints:                      # ONLY these prefixes may be requested
+#     - "https://api.immobiliare.it/partner/v2/listings"
+#     - "https://api.immobiliare.it/partner/v2/agencies"
+#   scope: [read_listings, read_agency_metadata]
+#   permitted_formats: [json]
+#   attribution: "Dati forniti da Immobiliare.it - riproduzione autorizzata"
+#   contact: "partnership@immobiliare.it"
+#   robots_applies: true            # set false ONLY if the contract grants it
+#   max_requests_per_minute: 60     # contractual ceiling, if stated
+#   notes: "B2B data licence; no redistribution of individual records."
+# ---------------------------------------------------------------------------

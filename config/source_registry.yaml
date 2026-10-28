@@ -1,0 +1,501 @@
+# Trentino Real Estate Intelligence - Source Registry
+# ===================================================
+# Single source of truth for which sources exist and how (whether) we may
+# acquire them. See docs/data_sources.md and docs/legal_data_access.md.
+#
+# tier:
+#   tier1_api        official / licensed API
+#   tier2_feed       authorized feed / partner export
+#   tier3_open_data  public open dataset (ISTAT, ISPAT, OMI, ...)
+#   tier4_scraping   ordinary web scraping (ONLY after legal check)
+#   tier5_restricted restricted - manual import + link only, never bypass
+#
+# status: OK | WARNING | DEGRADED | LICENSE_REQUIRED | restricted | UNKNOWN
+#
+# last_verified reflects the automated robots.txt check performed during the
+# Phase-1 audit. "UNKNOWN" means an adapter MUST NOT be built until verified.
+
+meta:
+  registry_version: "1.0.0"
+  last_audit: "2026-10-03"
+  audit_method: "robots.txt fetch + ToS/API review; see docs/legal_data_access.md"
+
+sources:
+  # ---------------- Portals (asking-price listings) ------------------------
+  - name: immobiliare_it
+    domain: www.immobiliare.it
+    kind: portal
+    tier: tier4_scraping
+    status: WARNING
+    recommended_mode: "licensed API / official feed preferred; scraping only for permitted listing URLs"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: true
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: partial
+    requires_auth: false
+    cost_or_license: "commercial API / data licensing available on request"
+    rate_limit: "not stated in robots.txt; enforce >=2s/request"
+    quality_estimate: medium
+    duplication_risk: high
+    last_verified: "2026-10-03"
+    notes: "robots.txt allows general listing pages but disallows /dettaglio.php, /ricerca.php, search/map, user areas. Sitemaps at /sitemap.xml. Prefer commercial data feed over scraping."
+    # --- Agent Import configuration (data, not code) ------------------------
+    # `search_urls` is deliberately EMPTY: the operator adds the exact URLs that
+    # robots.txt permits (and that legal has cleared) before any crawl runs. The
+    # crawler refuses to start with an empty list rather than guessing an entry
+    # point.
+    crawl:
+      search_urls: []
+      url_patterns:
+        - "/annunci/[0-9]+"
+      id_patterns:
+        - "/annunci/([0-9]+)"
+      requests_per_minute: 6
+      concurrency: 1
+      delay_s: 5
+      incremental_minutes: 240
+    last_verified: "2026-10-03"
+
+  - name: idealista_it
+    domain: www.idealista.it
+    kind: portal
+    tier: tier5_restricted
+    status: LICENSE_REQUIRED
+    recommended_mode: "licensed API / data partnership only"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: true
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "commercial data licence required; scraping prohibited"
+    rate_limit: "n/a (no automated access)"
+    quality_estimate: high
+    duplication_risk: high
+    last_verified: "2026-10-03"
+    notes: "Very restrictive robots.txt (blocks ajax/listing dispatcher, language tree, ordering params). Treat as restricted until a licence exists."
+
+  - name: casa_it
+    domain: www.casa.it
+    kind: portal
+    tier: tier4_scraping
+    status: WARNING
+    recommended_mode: "licensed feed preferred; listing detail pages permitted, search endpoints disallowed"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: true
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: partial
+    requires_auth: false
+    cost_or_license: "commercial data services; check ToS"
+    rate_limit: "not stated; enforce >=2s/request"
+    quality_estimate: medium
+    duplication_risk: high
+    last_verified: "2026-10-03"
+    notes: "robots.txt Allow:/ with many Disallow (e.g. /srp/, /client-pdp/api/, /immobili/idl/). Per-category sitemaps. Only permitted URLs, low rate."
+
+  - name: subito_it
+    domain: www.subito.it
+    kind: portal
+    tier: tier5_restricted
+    status: restricted
+    recommended_mode: "manual import + link only"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "anti-bot protection present; ToS prohibit scraping"
+    rate_limit: "n/a"
+    quality_estimate: low
+    duplication_risk: high
+    last_verified: "2026-10-03"
+    notes: "robots.txt not retrievable (HTTP 403 to our user agent) and anti-bot protection present. Do NOT attempt to bypass. Manual import only."
+
+  - name: wikicasa_it
+    domain: www.wikicasa.it
+    kind: portal
+    tier: tier5_restricted
+    status: UNKNOWN
+    recommended_mode: "verify robots/ToS before any adapter"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "unverified"
+    rate_limit: "unverified"
+    quality_estimate: medium
+    duplication_risk: high
+    last_verified: "not verified"
+    notes: "Status UNKNOWN - no adapter may be built until robots.txt and ToS are reviewed."
+
+  - name: trovocasa_it
+    domain: www.trovocasa.it
+    kind: portal
+    tier: tier5_restricted
+    status: UNKNOWN
+    recommended_mode: "verify robots/ToS before any adapter"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "unverified"
+    rate_limit: "unverified"
+    quality_estimate: low
+    duplication_risk: high
+    last_verified: "not verified"
+    notes: "Status UNKNOWN - verify before building an adapter."
+
+  - name: bakeca_it
+    domain: www.bakeca.it
+    kind: portal
+    tier: tier5_restricted
+    status: UNKNOWN
+    recommended_mode: "verify robots/ToS before any adapter"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "unverified"
+    rate_limit: "unverified"
+    quality_estimate: low
+    duplication_risk: high
+    last_verified: "not verified"
+    notes: "Status UNKNOWN - verify before building an adapter."
+
+  - name: attico_it
+    domain: www.attico.it
+    kind: portal
+    tier: tier5_restricted
+    status: UNKNOWN
+    recommended_mode: "verify robots/ToS before any adapter"
+    coverage: Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "unverified"
+    rate_limit: "unverified"
+    quality_estimate: low
+    duplication_risk: high
+    last_verified: "not verified"
+    notes: "Status UNKNOWN - verify before building an adapter."
+
+
+  # ---------------- Auction sources ----------------------------------------
+  - name: pvp_giustizia
+    domain: pvponline.giustizia.it
+    kind: auction
+    tier: tier3_open_data
+    status: WARNING
+    recommended_mode: "official portal; source of truth for procedure/lot/documents"
+    coverage: Trentino (Tribunale di Trento, Rovereto)
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: true
+    rss: false
+    robots_txt: true
+    scraping_allowed: partial
+    requires_auth: false
+    cost_or_license: "public judicial portal; verify ToS and robots before automation"
+    rate_limit: "enforce >=2s/request"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-03"
+    notes: "PVP is authoritative for auction identity and documents. robots.txt not retrievable during the audit (fetch failed); verify manually before enabling automation. Never bypass protections."
+
+  - name: astalegale_net
+    domain: www.astalegale.net
+    kind: auction
+    tier: tier4_scraping
+    status: OK
+    recommended_mode: "permitted crawling of public auction pages (robots Allow: /)"
+    coverage: Italy incl. Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: partial
+    requires_auth: false
+    cost_or_license: "robots.txt permits crawling; honour ToS and rate"
+    rate_limit: "not stated; enforce >=2s/request"
+    quality_estimate: medium
+    duplication_risk: high
+    last_verified: "2026-10-03"
+    notes: "robots.txt: 'User-agent: * Allow: /' with a few disallows (hash URLs, CmsFiles). Re-lists PVP lots; dedup by procedure key."
+    # `feeds` is deliberately EMPTY: the operator records the verified RSS/feed
+    # URL here, and only then does the auction scheduler pick the source up.
+    crawl:
+      feeds: []
+      interval_minutes: 1440
+      requests_per_minute: 6
+      concurrency: 1
+      delay_s: 5
+
+  - name: fallco_aste
+    domain: www.fallcoaste.it
+    kind: auction
+    tier: tier5_restricted
+    status: UNKNOWN
+    recommended_mode: "verify robots/ToS before any adapter"
+    coverage: Italy incl. Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "unverified"
+    rate_limit: "unverified"
+    quality_estimate: medium
+    duplication_risk: high
+    last_verified: "not verified"
+    notes: "Status UNKNOWN - verify robots.txt and ToS before building an adapter."
+
+  - name: asteannunci_it
+    domain: www.asteannunci.it
+    kind: auction
+    tier: tier5_restricted
+    status: UNKNOWN
+    recommended_mode: "verify robots/ToS before any adapter"
+    coverage: Italy incl. Trentino
+    update_frequency: continuous
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: false
+    requires_auth: false
+    cost_or_license: "unverified"
+    rate_limit: "unverified"
+    quality_estimate: low
+    duplication_risk: high
+    last_verified: "not verified"
+    notes: "Status UNKNOWN - verify before building an adapter."
+
+
+  # ---------------- Official statistics (Tier 3 open data) -----------------
+  - name: istat
+    domain: www.istat.it
+    kind: statistics
+    tier: tier3_open_data
+    status: OK
+    recommended_mode: "downloadable datasets + SDMX API"
+    coverage: national / provincial
+    update_frequency: quarterly / annual
+    api_public: true
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: true
+    requires_auth: false
+    cost_or_license: "CC BY 3.0 IT (attribution required)"
+    rate_limit: "be polite; cache datasets"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-03"
+    notes: "Provides IPAB price indices, population, households. Prefer the SDMX/JSON API over scraping. Attribution required."
+
+  - name: ispat_provincia_tn
+    domain: statweb.provincia.tn.it
+    kind: statistics
+    tier: tier3_open_data
+    status: WARNING
+    recommended_mode: "official provincial datasets (download/API where offered)"
+    coverage: Autonomous Province of Trento
+    update_frequency: annual / periodic
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: partial
+    requires_auth: false
+    cost_or_license: "open data - licence terms per dataset still to be confirmed"
+    rate_limit: "be polite; cache"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-28"
+    notes: "Annuario on-line at statweb.provincia.tn.it/annuario/ (ASP.NET WebForms). Chapter IX 'Economia' holds real-estate tables; the old 'V.07 Compravendite immobiliari e mutui' reference is superseded: chapter V is now 'Giustizia'. robots.txt returns 404 => no crawl rules, NOT a reuse licence. I.26 'Numero di famiglie per comunita' di valle' covers 1990-2024."
+    acquisition:
+      requires_browser: true
+      browser_reason: "TreeView via __doPostBack + __VIEWSTATE; table id and export format still unverified"
+      urls:
+        - https://statweb.provincia.tn.it/annuario/
+      indicators:
+        households: "I.26 Numero di famiglie per comunita' di valle (1990-2024)"
+        transactions_mortgages: "cap. IX (ex V.07) - to be confirmed live"
+      terms_verified: false
+
+  - name: omi_agenzia_entrate
+    domain: www.agenziaentrate.gov.it
+    kind: official_prices
+    tier: tier3_open_data
+    status: OK
+    recommended_mode: "semi-annual OMI quotation files (per comune / OMI zone)"
+    coverage: national, per comune
+    update_frequency: semi-annual
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: true
+    requires_auth: false
+    cost_or_license: "public official quotations; attribution required"
+    rate_limit: "cache files; semi-annual cadence"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-03"
+    notes: "OMI prices are QUOTATIONS over a semester (S1/S2), NOT transactions. Store as measure_type omi_min/omi_max with period semantics."
+
+  - name: agenzia_entrate_ntn
+    domain: www.agenziaentrate.gov.it
+    kind: transactions
+    tier: tier3_open_data
+    status: OK
+    recommended_mode: "NTN transaction statistics (series OMI_NTN)"
+    coverage: national / provincial
+    update_frequency: annual
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: true
+    requires_auth: false
+    cost_or_license: "public statistics; attribution required"
+    rate_limit: "annual cadence"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-03"
+    notes: "Transaction counts (NTN). Keep as a SEPARATE series from FIMAA/ISPAT notarial; never pool."
+
+  - name: fimaa
+    domain: www.fimaa.it
+    kind: transactions
+    tier: tier3_open_data
+    status: UNKNOWN
+    recommended_mode: "published FIMAA/Agenzia Entrate report (series FIMAA_AE)"
+    coverage: national / provincial
+    update_frequency: annual
+    api_public: false
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: false
+    scraping_allowed: partial
+    requires_auth: false
+    cost_or_license: "report download; check terms"
+    rate_limit: "annual cadence"
+    quality_estimate: medium
+    duplication_risk: medium
+    last_verified: "not verified"
+    notes: "Series FIMAA_AE kept separate from OMI_NTN and ISPAT_NOTARIAL."
+
+  - name: banca_italia
+    domain: www.bancaditalia.it
+    kind: macro
+    tier: tier3_open_data
+    status: OK
+    recommended_mode: "statistics portal / downloadable series"
+    coverage: national
+    update_frequency: monthly / quarterly
+    api_public: true
+    api_commercial: false
+    feed: false
+    rss: false
+    robots_txt: true
+    scraping_allowed: true
+    requires_auth: false
+    cost_or_license: "open statistics; attribution"
+    rate_limit: "cache series"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-03"
+    notes: "Mortgage rates, lending conditions, household debt."
+
+  - name: bce_ecb
+    domain: www.ecb.europa.eu
+    kind: macro
+    tier: tier3_open_data
+    status: OK
+    recommended_mode: "SDMX API (data.ecb.europa.eu)"
+    coverage: euro area
+    update_frequency: monthly
+    api_public: true
+    api_commercial: false
+    feed: true
+    rss: true
+    robots_txt: true
+    scraping_allowed: true
+    requires_auth: false
+    cost_or_license: "open; attribution"
+    rate_limit: "SDMX API; cache"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-03"
+    notes: "Policy rates, MRO, credit conditions."
+
+  - name: eurostat
+    domain: ec.europa.eu/eurostat
+    kind: statistics
+    tier: tier3_open_data
+    status: OK
+    recommended_mode: "SDMX / bulk download API"
+    coverage: EU / NUTS
+    update_frequency: monthly / quarterly
+    api_public: true
+    api_commercial: false
+    feed: true
+    rss: false
+    robots_txt: true
+    scraping_allowed: true
+    requires_auth: false
+    cost_or_license: "open; attribution"
+    rate_limit: "SDMX API; cache"
+    quality_estimate: high
+    duplication_risk: low
+    last_verified: "2026-10-03"
+    notes: "House price index (HPI), NUTS-2 housing indicators."
+

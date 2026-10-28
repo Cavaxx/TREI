@@ -1,0 +1,61 @@
+[project]
+name = "trentino-rei"
+version = "0.1.0"
+description = "Trentino Real Estate Market Intelligence & Opportunity Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "PyYAML>=6.0",
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Heavier analytics stack, intentionally optional so the core stays installable
+# in constrained environments. The MVP interpretable model (OLS hedonic +
+# comparables) runs on numpy only.
+ml = ["scikit-learn>=1.4", "pandas>=2.2"]
+db = ["SQLAlchemy>=2.0", "GeoAlchemy2>=0.15", "psycopg[binary]>=3.1", "redis>=5.0", "boto3>=1.34"]
+# Kernel remote-browser adapter. Kept optional so offline tests and the core
+# install without it; the adapter imports it lazily.
+browser = ["kernel==0.132.0"]
+
+[project.scripts]
+trei-fetch = "app.fetchers.cli:main"
+trei-email = "app.email_alert.cli:main"
+trei-agent = "app.agent_import.cli:main"
+trei-auction = "app.auction_fetcher.cli:main"
+trei-schedule = "app.scheduler.plan:main"
+trei-acquire = "app.acquisition.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+# E501: long lines are handled by the editor, not the linter.
+# B008: FastAPI's Depends()/Query() are *meant* to be called in defaults.
+# B905: zip() strictness is a style choice; lengths are equal by construction.
+# UP042: we keep `(str, Enum)` (not StrEnum) for explicit `.value` semantics
+#        and compatibility with Pydantic serialization.
+ignore = ["E501", "B008", "B905", "UP042"]

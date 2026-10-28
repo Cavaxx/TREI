@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Data / artefacts (raw snapshots belong in object storage, not the repo)
+data/
+*.sqlite
+*.db
+
+# Runtime evidence log and other generated state (never committed)
+var/
+
+# Docker volumes
+volumes/
+
+# Credentials / license files (never commit)
+secrets/

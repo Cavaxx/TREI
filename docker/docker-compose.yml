@@ -1,0 +1,192 @@
+# Trentino Real Estate Intelligence - container topology.
+# PostgreSQL+PostGIS is the primary store; Redis is queue/cache only (never the
+# primary DB); MinIO AIStor holds raw snapshots.
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: trei
+      POSTGRES_PASSWORD: trei
+      POSTGRES_DB: trei
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../app/db/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trei -d trei"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/aistor/minio:latest
+    command:
+      [
+        "server",
+        "/data",
+        "--console-address",
+        ":9001",
+        "--license",
+        "/minio.license"
+      ]
+    environment:
+      MINIO_ROOT_USER: ${TREI_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${TREI_S3_SECRET_KEY:-minioadmin}
+    ports:
+     - "9100:9000"
+     - "9101:9001"
+    
+    volumes:
+      - miniodata:/data
+      - ../secrets/minio.license:/minio.license:ro
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      TREI_POSTGRES_DSN: postgresql+psycopg://trei:trei@postgres:5432/trei
+      TREI_REDIS_URL: redis://redis:6379/0
+      TREI_S3_ENDPOINT: http://minio:9000
+      TREI_S3_ACCESS_KEY: ${TREI_S3_ACCESS_KEY:-minioadmin}
+      TREI_S3_SECRET_KEY: ${TREI_S3_SECRET_KEY:-minioadmin}
+      TREI_ALLOW_LIVE_FETCH: "false"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command:
+      [
+        "uvicorn",
+        "app.api.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      TREI_POSTGRES_DSN: postgresql+psycopg://trei:trei@postgres:5432/trei
+      TREI_REDIS_URL: redis://redis:6379/0
+      TREI_S3_ENDPOINT: http://minio:9000
+      TREI_S3_ACCESS_KEY: ${TREI_S3_ACCESS_KEY:-minioadmin}
+      TREI_S3_SECRET_KEY: ${TREI_S3_SECRET_KEY:-minioadmin}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command:
+      ["python", "-m", "app.fetchers.cli", "list"]
+
+  # --- Phase 2 channels ----------------------------------------------------
+
+  email-ingest:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      TREI_POSTGRES_DSN: postgresql+psycopg://trei:trei@postgres:5432/trei
+      TREI_REDIS_URL: redis://redis:6379/0
+      TREI_S3_ENDPOINT: http://minio:9000
+      TREI_S3_ACCESS_KEY: ${TREI_S3_ACCESS_KEY:-minioadmin}
+      TREI_S3_SECRET_KEY: ${TREI_S3_SECRET_KEY:-minioadmin}
+      TREI_DATALAKE_ROOT: /data/raw
+      TREI_EMAIL_DROP_DIR: /data/email/inbox
+    volumes:
+      - rawdata:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command:
+      ["python", "-m", "app.email_alert.cli", "ingest"]
+
+  agent-import:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      TREI_POSTGRES_DSN: postgresql+psycopg://trei:trei@postgres:5432/trei
+      TREI_REDIS_URL: redis://redis:6379/0
+      TREI_S3_ENDPOINT: http://minio:9000
+      TREI_S3_ACCESS_KEY: ${TREI_S3_ACCESS_KEY:-minioadmin}
+      TREI_S3_SECRET_KEY: ${TREI_S3_SECRET_KEY:-minioadmin}
+      TREI_DATALAKE_ROOT: /data/raw
+      TREI_ALLOW_BROWSER: "false"
+      TREI_ALLOW_VISION: "false"
+    volumes:
+      - rawdata:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command:
+      ["python", "-m", "app.agent_import.cli", "status"]
+
+  auction-fetcher:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      TREI_POSTGRES_DSN: postgresql+psycopg://trei:trei@postgres:5432/trei
+      TREI_REDIS_URL: redis://redis:6379/0
+      TREI_S3_ENDPOINT: http://minio:9000
+      TREI_S3_ACCESS_KEY: ${TREI_S3_ACCESS_KEY:-minioadmin}
+      TREI_S3_SECRET_KEY: ${TREI_S3_SECRET_KEY:-minioadmin}
+      TREI_DATALAKE_ROOT: /data/raw
+    volumes:
+      - rawdata:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command:
+      ["python", "-m", "app.auction_fetcher.cli", "sources"]
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      TREI_REDIS_URL: redis://redis:6379/0
+      TREI_DATALAKE_ROOT: /data/raw
+    volumes:
+      - rawdata:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command:
+      ["python", "-m", "app.scheduler.plan", "plan"]
+
+volumes:
+  pgdata:
+  miniodata:
+  rawdata:
