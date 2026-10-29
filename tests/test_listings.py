@@ -84,6 +84,15 @@ def test_parse_gabetti_detail_from_meta():
     assert listing.typology == "appartamento"
 
 
+def test_observe_content_hash_change_does_not_duplicate(tmp_path):
+    store = ListingStore(tmp_path / "l.jsonl")
+    a = Listing(source="s", native_id="1", price=100.0, content_hash="h1")
+    b = Listing(source="s", native_id="1", price=100.0, content_hash="h2")  # different raw hash, same fields
+    assert store.observe(a)["new"] is True
+    assert store.observe(b)["stored"] is False  # signature unchanged -> no-op
+    assert len(store.current()) == 1
+
+
 def test_listing_store_parser_version_change_reobserves(tmp_path):
     store = ListingStore(tmp_path / "listings.jsonl")
     a = Listing(source="tecnocasa_it", native_id="1", price=208000.0, content_hash="h1", parser_version="v1")

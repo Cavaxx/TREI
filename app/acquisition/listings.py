@@ -71,6 +71,31 @@ class Listing:
     def key(self) -> str:
         return f"{self.source}:{self.native_id}"
 
+    def signature(self) -> tuple:
+        """Stable tuple of the observable fields, used for deduplication.
+
+        The raw HTML hash is NOT stable across runs (dynamic page content), so
+        dedup must compare the parsed fields instead."""
+        return (
+            self.price,
+            self.surface_m2,
+            self.rooms,
+            self.bedrooms,
+            self.bathrooms,
+            self.title,
+            self.comune,
+            self.typology,
+            self.contract,
+            self.energy_class,
+            self.floor,
+            self.elevator,
+            self.latitude,
+            self.longitude,
+            self.price_qualifier,
+            self.previous_price,
+            self.discount,
+        )
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -99,13 +124,14 @@ class ListingStore:
     def observe(self, listing: Listing) -> dict:
         rec = listing.to_dict()
         key = listing.key()
+        sig = list(listing.signature())
         prior = [r for r in self._records if r.get("key") == key]
         rec["key"] = key
+        rec["signature"] = sig
         if prior:
             last = prior[-1]
             same = (
-                last.get("price") == rec.get("price")
-                and last.get("content_hash") == rec.get("content_hash")
+                last.get("signature") == sig
                 and last.get("parser_version") == rec.get("parser_version")
             )
             if same:
@@ -139,6 +165,27 @@ class ListingStore:
 
     def history(self, native_id: str) -> list[dict]:
         return [r for r in self._records if r.get("native_id") == native_id]
+
+    def compact(self) -> int:
+        """Remove snapshots with the same (key, signature), keeping the earliest
+        ``first_seen_at`` and latest ``last_seen_at``. Returns removed count."""
+        seen: dict[tuple, dict] = {}
+        order: list[dict] = []
+        removed = 0
+        for rec in self._records:
+            gkey = (rec.get("key", ""), tuple(rec.get("signature") or ()))
+            if gkey in seen:
+                prev = seen[gkey]
+                prev["first_seen_at"] = min(prev.get("first_seen_at") or "", rec.get("first_seen_at") or "")
+                prev["last_seen_at"] = max(prev.get("last_seen_at") or "", rec.get("last_seen_at") or "")
+                removed += 1
+            else:
+                seen[gkey] = rec
+                order.append(rec)
+        if removed:
+            self._records = order
+            self._rewrite()
+        return removed
 
 
 def _int_of(text: str) -> int | None:
