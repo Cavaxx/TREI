@@ -41,8 +41,15 @@ sources:
     rate_limit: "not stated in robots.txt; enforce >=2s/request"
     quality_estimate: medium
     duplication_risk: high
-    last_verified: "2026-10-03"
+    last_verified: "2026-10-29"
     notes: "robots.txt allows general listing pages but disallows /dettaglio.php, /ricerca.php, search/map, user areas. Sitemaps at /sitemap.xml. Prefer commercial data feed over scraping."
+    acquisition:
+      channel: "licensed API / feed (preferred); or permitted listing URLs"
+      access: "not_licensed"
+      connector: "none"
+      live_tested: false
+      records: 0
+      robots_rule: "Disallow: /ricerca.php, /dettaglio.php, /search-list; listing pages (sitemap) allowed but detail pages disallowed"
     # --- Agent Import configuration (data, not code) ------------------------
     # `search_urls` is deliberately EMPTY: the operator adds the exact URLs that
     # robots.txt permits (and that legal has cleared) before any crawl runs. The
@@ -79,8 +86,15 @@ sources:
     rate_limit: "n/a (no automated access)"
     quality_estimate: high
     duplication_risk: high
-    last_verified: "2026-10-03"
-    notes: "Very restrictive robots.txt (blocks ajax/listing dispatcher, language tree, ordering params). Treat as restricted until a licence exists."
+    last_verified: "2026-10-29"
+    notes: "Official Search API access request page exists (https://developers.idealista.com/access-request). Scraping is prohibited by ToS. Integration is blocked on access approval."
+    acquisition:
+      channel: "idealista Search API"
+      access: "awaiting_access"
+      access_request_url: "https://developers.idealista.com/access-request"
+      connector: "none"
+      live_tested: false
+      records: 0
 
   - name: casa_it
     domain: www.casa.it
@@ -123,8 +137,14 @@ sources:
     rate_limit: "n/a"
     quality_estimate: low
     duplication_risk: high
-    last_verified: "2026-10-03"
-    notes: "robots.txt not retrievable (HTTP 403 to our user agent) and anti-bot protection present. Do NOT attempt to bypass. Manual import only."
+    last_verified: "2026-10-29"
+    notes: "robots.txt not retrievable to our crawler (403/anti-bot). ToS prohibit scraping. Kernel (real browser) is the only viable channel and has not been collauded yet."
+    acquisition:
+      channel: "browser (Kernel)"
+      access: "blocked_pending_test"
+      connector: "none"
+      live_tested: false
+      records: 0
 
   - name: wikicasa_it
     domain: www.wikicasa.it

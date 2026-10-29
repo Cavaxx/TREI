@@ -70,6 +70,12 @@ cli-auction-pvp: ## Ingest a licensed PVP export drop: DIR=/path/to/drop
 cli-schedule: ## Print the acquisition schedule plan (policy-aware)
 	$(PY) -m app.scheduler.plan plan
 
+daily-run: ## Run one daily acquisition job (lock + checkpoint)
+	$(PY) -m app.scheduler.daily run
+
+daily-status: ## Show the last daily run and the next expected run
+	$(PY) -m app.scheduler.daily status
+
 up: ## Start the container stack
 	docker compose -f docker/docker-compose.yml up --build
 

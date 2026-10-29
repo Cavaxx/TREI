@@ -108,6 +108,37 @@ def listing_detail(native_id: str) -> dict:
     }
 
 
+@router.get("/portals")
+def portals_status() -> dict:
+    """Concrete status of the three major portals (channel/access/connector/live)."""
+    from app.fetchers.registry import SourceRegistry
+
+    registry = SourceRegistry.load()
+    out = []
+    for name in ("idealista_it", "subito_it", "immobiliare_it"):
+        config = registry.get(name)
+        if config is None:
+            continue
+        acq = config.extra.get("acquisition") if isinstance(config.extra, dict) else None
+        acq = acq if isinstance(acq, dict) else {}
+        out.append(
+            {
+                "name": name,
+                "domain": config.domain,
+                "status": config.status,
+                "tier": config.tier,
+                "channel": acq.get("channel", config.recommended_mode),
+                "access": acq.get("access", "unknown"),
+                "access_request_url": acq.get("access_request_url", ""),
+                "connector": acq.get("connector", "none"),
+                "live_tested": acq.get("live_tested", False),
+                "records": acq.get("records", 0),
+                "last_verified": config.last_verified,
+            }
+        )
+    return {"portals": out, "demo_data": False}
+
+
 @router.get("/statistics")
 def statistics(indicator: str | None = None) -> dict:
     rows = [r for r in _observations() if not r.get("superseded")]

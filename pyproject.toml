@@ -33,6 +33,7 @@ trei-agent = "app.agent_import.cli:main"
 trei-auction = "app.auction_fetcher.cli:main"
 trei-schedule = "app.scheduler.plan:main"
 trei-acquire = "app.acquisition.cli:main"
+trei-daily = "app.scheduler.daily:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
