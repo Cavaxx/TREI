@@ -53,13 +53,58 @@ class ObservationStore:
             handle.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
         return {"stored": True, "new": not prior, "revised": bool(prior), "revision": rec["revision"], "key": key}
 
-    def all(self) -> list[dict]:
-        return list(self._records)
+    def all(self, *, include_superseded: bool = False) -> list[dict]:
+        if include_superseded:
+            return list(self._records)
+        return [r for r in self._records if not r.get("superseded")]
+
+    def supersede(self, *, where, reason: str) -> int:
+        """Mark records matching ``where`` (a predicate on the record dict) as
+        superseded. Controlled and idempotent: already-superseded records are
+        skipped. Rewrites the journal in place. Returns newly-marked count."""
+        changed = 0
+        for rec in self._records:
+            if rec.get("superseded"):
+                continue
+            if not where(rec):
+                continue
+            rec["superseded"] = True
+            rec["superseded_reason"] = reason
+            changed += 1
+        if changed:
+            self._rewrite()
+        return changed
+
+    def restore(self, *, where) -> int:
+        """Remove the superseded flag from records matching ``where``.
+
+        Used to self-heal a too-broad supersede (the corrected records must never
+        be flagged). Returns the number of records restored."""
+        changed = 0
+        for rec in self._records:
+            if not rec.get("superseded"):
+                continue
+            if not where(rec):
+                continue
+            rec.pop("superseded", None)
+            rec.pop("superseded_reason", None)
+            changed += 1
+        if changed:
+            self._rewrite()
+        return changed
+
+    def _rewrite(self) -> None:
+        if self.path is None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("w", encoding="utf-8") as handle:
+            for rec in self._records:
+                handle.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
 
     def coverage(self) -> dict:
-        """Effective coverage: indicator -> territory -> sorted periods."""
+        """Effective coverage of active (non-superseded) records."""
         out: dict = {}
-        for rec in self._records:
+        for rec in self.all():
             ind = rec.get("indicator", "?")
             terr = rec.get("territory_code", "?")
             period = rec.get("period", "?")

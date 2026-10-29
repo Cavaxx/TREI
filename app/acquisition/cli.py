@@ -128,6 +128,14 @@ def _cmd_pilot(args: argparse.Namespace) -> int:
     return 0 if report["status"] == "completed" else (1 if report["status"] == "partial" else 2)
 
 
+def _cmd_migrate(args: argparse.Namespace) -> int:
+    from app.acquisition.migrations import migrate_v07
+
+    report = migrate_v07(store_path=args.store, data_root=args.data_root)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report.get("status") == "done" else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     load_env_file()
     parser = argparse.ArgumentParser(prog="trei-acquire", description="TREI acquisition CLI")
@@ -151,6 +159,11 @@ def main(argv: list[str] | None = None) -> int:
     p_pilot.add_argument("--store", default=None)
     p_pilot.add_argument("--budget", default=None)
     p_pilot.set_defaults(func=_cmd_pilot)
+
+    p_migrate = sub.add_parser("migrate-v07", help="correct the V.07 column mapping (idempotent)")
+    p_migrate.add_argument("--store", default=None)
+    p_migrate.add_argument("--data-root", dest="data_root", default=None)
+    p_migrate.set_defaults(func=_cmd_migrate)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -106,7 +106,9 @@ sintetici restano solo nei fixture/endpoint marcati demo.
   via browser Kernel):
   - `V.07` (`tavola.aspx?idt=5.07`, cap. V «Giustizia») «Compravendite immobiliari
     e mutui (2000-2023)», Fonte Istat → 27 osservazioni (9 anni × 3 indicatori:
-    compravendite residenziali, mutui residenziali, mutui economici).
+    compravendite abitazione/accessori, compravendite uso economico, mutui con
+    ipoteca). Le tre colonne sono state corrette da una precedente lettura errata
+    (che scambiava «uso economico» per «mutui residenziali»).
   - `I.26` (`tavola.aspx?idt=1.26`) «Numero di famiglie per comunità di valle
     (1990-2024)» → 102 osservazioni (17 territori × 6 annate effettivamente
     renderizzate: 1990, 2010, 2015, 2020, 2023, 2024).

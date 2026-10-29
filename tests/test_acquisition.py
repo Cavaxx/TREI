@@ -117,6 +117,28 @@ def test_store_rejects_synthetic(tmp_path):
 
 # --- env loader --------------------------------------------------------------
 
+def test_store_supersede_and_restore_are_idempotent(tmp_path):
+    store = ObservationStore(tmp_path / "obs.jsonl")
+    obs = Observation(source="s", period="2015", indicator="mutui_residenziali", territory_code="ITH20", value=1.0, definition_version="V.07 (Fonte: Istat)", content_hash="h1")
+    store.upsert(obs)
+    assert len(store.all()) == 1
+
+    wrong = lambda r: r.get("indicator") == "mutui_residenziali"  # noqa: E731
+    correct = lambda r: r.get("indicator") == "compravendite_economiche"  # noqa: E731
+    assert store.supersede(where=wrong, reason="migration") == 1
+    assert len(store.all()) == 0  # superseded records leave the active view
+
+    # idempotent: re-running marks nothing new
+    assert store.supersede(where=wrong, reason="migration") == 0
+
+    # restore brings it back
+    assert store.restore(where=wrong) == 1
+    assert len(store.all()) == 1
+
+    # restore of a non-matching record is a no-op
+    assert store.restore(where=correct) == 0
+
+
 def test_envfile_loads_only_allowed_keys_and_does_not_override(tmp_path, monkeypatch):
     path = tmp_path / ".env"
     path.write_text(

@@ -116,11 +116,22 @@ def _year_rows(grid: list[list[str]]) -> list[list[str]]:
     return [row for row in grid if row and re.fullmatch(r"\d{4}", (row[0] or "").strip())]
 
 
+#: Parser version for the ISPAT connector. Bumped whenever the column mapping or
+#: definitions change, so lineage can tell a corrected record from an old one.
+ISPAT_PARSER_VERSION = "ispat-0.2.0"
+
+
 def parse_v07(grid: list[list[str]], *, source: str, run_id: str) -> list[Observation]:
     """Parse V.07 "Compravendite immobiliari e mutui".
 
-    Columns (after the two-row header): year, compravendite (residential units),
-    mutui residential units, mutui economic units.
+    Header (two rows):
+      Anni (rowspan 2) | Compravendite (colspan 2) | Mutui (rowspan 2)
+                        | abitazione ed accessori   | uso economico
+
+    Columns per year row: year, compravendite residenziali (abitazione ed
+    accessori), compravendite ad uso economico, mutui con ipoteca immobiliare.
+    These are *units* (unita' immobiliari) transacted and *number* of mortgages,
+    not notarial deeds / NTN.
     """
     observations: list[Observation] = []
     for row in _year_rows(grid):
@@ -131,11 +142,29 @@ def parse_v07(grid: list[list[str]], *, source: str, run_id: str) -> list[Observ
         if any(v is None for v in values):
             continue
         specs = [
-            ("compravendite_residenziali", "ISPAT_NOTARIAL", "Compravendite - unita' immobiliari ad uso abitazione ed accessori", values[0]),
-            ("mutui_residenziali", "ISPAT_MUTUI", "Mutui con costituzione di ipoteca immobiliare - unita' ad uso abitazione ed accessori", values[1]),
-            ("mutui_economici", "ISPAT_MUTUI", "Mutui con costituzione di ipoteca immobiliare - unita' ad uso economico", values[2]),
+            (
+                "compravendite_residenziali",
+                "ISPAT_COMPRAVENDITE",
+                "Compravendite di unita' immobiliari ad uso abitazione ed accessori (tav. V.07, Fonte Istat)",
+                "unita_immobiliari",
+                values[0],
+            ),
+            (
+                "compravendite_economiche",
+                "ISPAT_COMPRAVENDITE",
+                "Compravendite di unita' immobiliari ad uso economico: artigianale, commerciale, industriale, ufficio, rurale (tav. V.07, Fonte Istat)",
+                "unita_immobiliari",
+                values[1],
+            ),
+            (
+                "mutui",
+                "ISPAT_MUTUI",
+                "Mutui con costituzione di ipoteca immobiliare (tav. V.07, Fonte Istat)",
+                "count",
+                values[2],
+            ),
         ]
-        for indicator, series, definition, value in specs:
+        for indicator, series, definition, unit, value in specs:
             observations.append(
                 Observation(
                     source=source,
@@ -146,11 +175,11 @@ def parse_v07(grid: list[list[str]], *, source: str, run_id: str) -> list[Observ
                     geo_level="province",
                     indicator=indicator,
                     value=value,
-                    unit="count",
+                    unit=unit,
                     definition=definition,
                     definition_version="V.07 (Fonte: Istat)",
                     content_hash="",
-                    parser_version=PARSER_VERSION,
+                    parser_version=ISPAT_PARSER_VERSION,
                     schema_version=SCHEMA_VERSION,
                     run_id=run_id,
                     quality="ok",
@@ -213,4 +242,23 @@ def parse_i26(grid: list[list[str]], *, source: str, run_id: str) -> list[Observ
 
 def raw_content_hash(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def grid_from_html(html: str) -> list[list[str]]:
+    """Reconstruct a 2-D cell grid from a stored raw ``<table>`` fragment.
+
+    Used by the migration so corrected records are re-derived from the preserved
+    raw evidence, not from hard-coded values.
+    """
+    from bs4 import BeautifulSoup  # noqa: PLC0415
+
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table")
+    if table is None:
+        return []
+    grid: list[list[str]] = []
+    for tr in table.find_all("tr"):
+        cells = [re.sub(r"\s+", " ", c.get_text(" ", strip=True)) for c in tr.find_all(["th", "td"])]
+        grid.append(cells)
+    return grid
 
