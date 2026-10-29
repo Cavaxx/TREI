@@ -28,22 +28,20 @@ Fonte: Istat / ISPAT. Navigazione ASP.NET cookieless (richiede browser).
   il totale provinciale è una riga distinta, non va sommato alle comunità.
 - Licenza di riuso: `terms_verified: false` (robots.txt 404 ≠ licenza).
 
-## Annunci immobiliari (primo pilota Tecnocasa)
+## Annunci immobiliari (campione, 2 fonti indipendenti)
 
-Fonte: **Tecnocasa** (`www.tecnocasa.it`). robots.txt permissivo (consente il
-crawling, sitemap `residenziali-*.xml.gz` esplicite); le schede espongono un JSON
-strutturato in `<estate-show-v1 :estate="...">`. Acquisizione via HTTP, nessun
-browser.
+| Fonte | Gruppo | Annunci | Metodo |
+|---|---|---|---|
+| Tecnocasa (`www.tecnocasa.it`) | Tecnocasa | 15 | HTTP (JSON in `<estate-show-v1>`) |
+| Gabetti (`www.gabetti.it`) | Gabetti Group | 7 | HTTP (meta tag) |
 
-| Campo | Stato |
-|---|---|
-| Annunci acquisiti | 15 (campione, comuni di Andalo, Arco, Cavedago, ecc., provincia TN) |
-| Campi | prezzo, prezzo precedente, sconto, superficie, locali, bagni, piano, ascensore, classe energetica, data pubblicazione, coordinate, URL |
-| Comuni coperti | Andalo, Arco, Cavedago, ecc. (provincia di Trento) — NON l'intero mercato |
-| Deduplica | per (source, native_id); storico prezzo conservato (osservazioni successive) |
-| Note | superficie dichiarata "Mq" senza specifica commerciale/calpestabile; `surface_definition=non_specificata`. Codice ISTAT comunale non esposto dalla fonte (si usa il nome comune + provincia TN). |
+Totale **22 annunci** da **2 gruppi indipendenti**. Campo `rooms` (locali) distinto
+da `bedrooms` (camere) e `bathrooms`. Gabetti espone solo i campi core (tipologia,
+indirizzo, comune, provincia, prezzo, superficie, locali, bagni): classe energetica,
+piano e coordinate restano `non disponibile` per quella fonte.
 
-La raccolta è un **primo campione**, non l'intero mercato provinciale. La soglia
-di 30 annunci prevista richiede un ulteriore run (`--max-listings 30`) o la
-schedulazione giornaliera (non ancora attiva).
+Il campione non rappresenta l'intero mercato provinciale e la quota di copertura del
+mercato resta **non determinabile** (manca un denominatore affidabile). La terza fonte
+indipendente prevista non è ancora stata aggiunta.
+
 
