@@ -136,6 +136,14 @@ def _cmd_migrate(args: argparse.Namespace) -> int:
     return 0 if report.get("status") == "done" else 2
 
 
+def _cmd_listings_pilot(args: argparse.Namespace) -> int:
+    from app.acquisition.listings import run_listings_pilot
+
+    report = run_listings_pilot(store_path=args.store, max_listings=args.max_listings)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_env_file()
     parser = argparse.ArgumentParser(prog="trei-acquire", description="TREI acquisition CLI")
@@ -164,6 +172,11 @@ def main(argv: list[str] | None = None) -> int:
     p_migrate.add_argument("--store", default=None)
     p_migrate.add_argument("--data-root", dest="data_root", default=None)
     p_migrate.set_defaults(func=_cmd_migrate)
+
+    p_listings = sub.add_parser("listings-pilot", help="ingest a small sample of Tecnocasa Trento listings")
+    p_listings.add_argument("--store", default=None)
+    p_listings.add_argument("--max-listings", dest="max_listings", type=int, default=15)
+    p_listings.set_defaults(func=_cmd_listings_pilot)
 
     args = parser.parse_args(argv)
     return args.func(args)
