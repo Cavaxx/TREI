@@ -63,6 +63,27 @@ def test_listing_store_idempotent_and_history(tmp_path):
     assert len(store.history("1")) == 2  # history preserved, not overwritten
 
 
+GABETTI_HTML = """<html><head>
+<meta property="og:title" content="Immobile Appartamento in Viale dei Tigli  14, Riva del Garda (TN) 695.000&nbsp;€, 160 m², 4 locali, 2 bagni | Gabetti"/>
+<meta name="description" content="Appartamento in Riva del Garda"/>
+</head><body></body></html>"""
+
+
+def test_parse_gabetti_detail_from_meta():
+    from app.acquisition.listings import parse_gabetti_detail
+
+    listing = parse_gabetti_detail(GABETTI_HTML, url="https://www.gabetti.it/vendita/riva-del-garda/appartamento/3337645", source="gabetti_it", run_id="r")
+    assert listing is not None
+    assert listing.native_id == "3337645"
+    assert listing.price == 695000.0
+    assert listing.surface_m2 == 160.0
+    assert listing.rooms == 4
+    assert listing.bathrooms == 2
+    assert listing.comune == "Riva del Garda"
+    assert listing.province == "TN"
+    assert listing.typology == "appartamento"
+
+
 def test_listing_store_parser_version_change_reobserves(tmp_path):
     store = ListingStore(tmp_path / "listings.jsonl")
     a = Listing(source="tecnocasa_it", native_id="1", price=208000.0, content_hash="h1", parser_version="v1")

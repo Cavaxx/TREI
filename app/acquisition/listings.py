@@ -1,8 +1,9 @@
-"""Listing acquisition: contract, store and the Tecnocasa connector.
+"""Listing acquisition: contract, store and the Tecnocasa/Gabetti connectors.
 
-Tecnocasa is a permitted, deterministic HTTP source: robots.txt allows crawling
-and publishes residential sitemaps; each detail page embeds a structured JSON
-object in a ``<estate-show-v1 :estate="{...}">`` Web Component. No browser needed.
+Tecnocasa and Gabetti are permitted, deterministic HTTP sources (robots.txt
+allows crawling and publishes sitemaps). Tecnocasa embeds a structured JSON in an
+``<estate-show-v1 :estate="{...}">`` Web Component; Gabetti exposes the core fields
+in its meta tags (og:title / description).
 
 A *listing* is a snapshot observed at a point in time; repeated observations of
 the same native id are kept (price/state history is never overwritten).
@@ -77,9 +78,9 @@ class Listing:
 class ListingStore:
     """JSONL store of listing observations; current state = latest per key.
 
-    Idempotent: re-observing the same (source, native_id) with the same price and
-    content is a no-op except refreshing ``last_seen_at``; a price change appends
-    a new observation instead of overwriting history."""
+    Idempotent: re-observing the same (source, native_id) with the same price,
+    content and parser version is a no-op except refreshing ``last_seen_at``; a
+    price change appends a new observation instead of overwriting history."""
 
     def __init__(self, path) -> None:
         from pathlib import Path
@@ -102,7 +103,12 @@ class ListingStore:
         rec["key"] = key
         if prior:
             last = prior[-1]
-            if last.get("price") == rec.get("price") and last.get("content_hash") == rec.get("content_hash") and last.get("parser_version") == rec.get("parser_version"):
+            same = (
+                last.get("price") == rec.get("price")
+                and last.get("content_hash") == rec.get("content_hash")
+                and last.get("parser_version") == rec.get("parser_version")
+            )
+            if same:
                 last["last_seen_at"] = rec["observed_at"]
                 self._rewrite()
                 return {"stored": False, "new": False, "price_changed": False, "key": key}
@@ -126,7 +132,6 @@ class ListingStore:
         return list(self._records)
 
     def current(self) -> list[dict]:
-        """Latest observation per listing key."""
         latest: dict[str, dict] = {}
         for rec in self._records:
             latest[rec.get("key", "")] = rec
@@ -250,6 +255,7 @@ def discover_tecnocasa_urls(*, province: str = "trento", max_urls: int = 200, ti
                         return urls
     return urls
 
+
 def run_listings_pilot(*, store_path=None, max_listings: int = 15, source: str = "tecnocasa_it") -> dict:
     """Discover and ingest a small, explicit sample of Tecnocasa Trento listings."""
     import time
@@ -263,17 +269,7 @@ def run_listings_pilot(*, store_path=None, max_listings: int = 15, source: str =
     started = time.monotonic()
 
     urls = discover_tecnocasa_urls(province="trento", max_urls=max_listings * 2)
-    report = {
-        "run_id": run_id,
-        "source": source,
-        "method": "http",
-        "status": "completed",
-        "discovered": len(urls),
-        "records": 0,
-        "stored": 0,
-        "price_changes": 0,
-        "errors": [],
-    }
+    report = {"run_id": run_id, "source": source, "method": "http", "status": "completed", "discovered": len(urls), "records": 0, "stored": 0, "price_changes": 0, "errors": []}
 
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=settings.request_timeout_s, follow_redirects=True, headers=headers) as client:
@@ -287,6 +283,137 @@ def run_listings_pilot(*, store_path=None, max_listings: int = 15, source: str =
                 report["errors"].append({"url": url, "error": f"HTTP {resp.status_code}"})
                 continue
             listing = parse_tecnocasa_detail(resp.text, url=url, source=source, run_id=run_id)
+            if listing is None:
+                report["errors"].append({"url": url, "error": "no structured data"})
+                continue
+            result = store.observe(listing)
+            report["records"] += 1
+            report["stored"] += 1 if result.get("stored") else 0
+            report["price_changes"] += 1 if result.get("price_changed") else 0
+            time.sleep(1.0)
+
+    report["current"] = len(store.current())
+    report["duration_seconds"] = round(time.monotonic() - started, 2)
+    return report
+
+
+#: Major Trento-province municipalities used to scope the Gabetti sitemap filter.
+#: This is an explicit, documented scope, not a claim of full province coverage.
+TRENTO_COMUNI = [
+    "trento", "rovereto", "riva-del-garda", "arco", "pergine-valsugana",
+    "mezzolombardo", "levico-terme", "borgo-valsugana", "ala", "mori",
+    "lavis", "civezzano", "aldeno", "besenello", "calliano", "mattarello",
+    "nago-torbole", "dro", "vallelaghi", "pinzolo", "andalo", "molveno",
+    "folgaria", "predazzo", "cavalese", "clès", "malè", "tione",
+]
+
+
+def parse_gabetti_detail(html_text: str, *, url: str, source: str, run_id: str) -> Listing | None:
+    """Parse a Gabetti detail page from its meta tags.
+
+    The RSC payload is hard to parse; the meta description carries the verified
+    core fields deterministically (typology, address, comune (province), price,
+    surface, rooms, bathrooms). Fields not exposed there stay ``None``/empty.
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html_text, "html.parser")
+    text = ""
+    og_title = soup.find("meta", property="og:title")
+    if og_title:
+        text = og_title.get("content") or ""
+    if not text:
+        og_desc = soup.find("meta", attrs={"name": "description"})
+        if og_desc:
+            text = og_desc.get("content") or ""
+    if not text:
+        return None
+
+    native_id = url.rstrip("/").rsplit("/", 1)[-1]
+
+    def _num(pattern: str) -> int | None:
+        m = re.search(pattern, text)
+        return int(m.group(1).replace(".", "")) if m else None
+
+    typology_m = re.search(r"Immobile (.+?) in ", text)
+    comune_m = re.search(r", ([^,()]+) \((\w{2})\)", text)
+    address_m = re.search(r" in (.+?), ", text)
+
+    price = _num(r"(\d[\d.]*)\s*€")
+    surface = _num(r"(\d+)\s*m²")
+    rooms = _num(r"(\d+)\s*locali")
+    bathrooms = _num(r"(\d+)\s*bagni")
+
+    return Listing(
+        source=source,
+        native_id=native_id,
+        url=url,
+        title=(typology_m.group(1) if typology_m else "") + (", " + comune_m.group(1) if comune_m else ""),
+        typology=(typology_m.group(1) or "").lower(),
+        contract="vendita",
+        price=float(price) if price else None,
+        currency="EUR",
+        surface_m2=float(surface) if surface else None,
+        surface_definition="non_specificata",
+        comune=comune_m.group(1) if comune_m else "",
+        province=comune_m.group(2) if comune_m else "",
+        address=address_m.group(1) if address_m else "",
+        rooms=rooms,
+        bathrooms=bathrooms,
+        published_at="",
+        content_hash=sha256(html_text.encode()),
+        run_id=run_id,
+        parser_version="gabetti-0.1.0",
+    )
+
+
+def discover_gabetti_urls(*, max_urls: int = 200, timeout: float = 30.0) -> list[str]:
+    """Discover Gabetti residential-sale URLs for Trento municipalities."""
+    urls: list[str] = []
+    headers = {"User-Agent": "TREI-bot/0.1 (+https://example.org/trentino-rei; contact: data@example.org)"}
+    with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
+        resp = client.get("https://www.gabetti.it/sitemap/properties.xml")
+        if resp.status_code != 200:
+            return urls
+        for m in re.finditer(r"<loc>([^<]+)</loc>", resp.text):
+            loc = m.group(1)
+            if "/vendita/" not in loc:
+                continue
+            comune = loc.split("/vendita/", 1)[1].split("/", 1)[0].lower()
+            if comune in TRENTO_COMUNI:
+                urls.append(loc)
+                if len(urls) >= max_urls:
+                    return urls
+    return urls
+
+
+def run_gabetti_pilot(*, store_path=None, max_listings: int = 15, source: str = "gabetti_it") -> dict:
+    """Discover and ingest a small, explicit sample of Gabetti Trento listings."""
+    import time
+    import uuid
+
+    from app.core.config import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+    store = ListingStore(store_path or PROJECT_ROOT / "data" / "listings.jsonl")
+    run_id = "gb-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    started = time.monotonic()
+
+    urls = discover_gabetti_urls(max_urls=max_listings * 2)
+    report = {"run_id": run_id, "source": source, "method": "http", "status": "completed", "discovered": len(urls), "records": 0, "stored": 0, "price_changes": 0, "errors": []}
+
+    headers = {"User-Agent": settings.user_agent}
+    with httpx.Client(timeout=settings.request_timeout_s, follow_redirects=True, headers=headers) as client:
+        for url in urls[:max_listings]:
+            try:
+                resp = client.get(url)
+            except httpx.HTTPError as exc:
+                report["errors"].append({"url": url, "error": str(exc)})
+                continue
+            if resp.status_code != 200:
+                report["errors"].append({"url": url, "error": f"HTTP {resp.status_code}"})
+                continue
+            listing = parse_gabetti_detail(resp.text, url=url, source=source, run_id=run_id)
             if listing is None:
                 report["errors"].append({"url": url, "error": "no structured data"})
                 continue
