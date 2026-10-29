@@ -52,6 +52,7 @@ class Listing:
     latitude: float | None = None
     longitude: float | None = None
     rooms: int | None = None
+    bedrooms: int | None = None
     bathrooms: int | None = None
     floor: str = ""
     elevator: str = ""
@@ -214,6 +215,7 @@ def parse_tecnocasa_detail(html_text: str, *, url: str, source: str, run_id: str
         latitude=float(lat) if lat not in (None, "") else None,
         longitude=float(lon) if lon not in (None, "") else None,
         rooms=_int_of(data.get("rooms") or ""),
+        bedrooms=_int_of(str(feats.get("bedrooms") or "")) or _int_of(_characteristic(data.get("data"), "Camere")),
         bathrooms=_int_of(data.get("bathrooms") or ""),
         floor=floor,
         elevator=elevator,

@@ -20,6 +20,8 @@ from app.api.deps import (
     get_registry,
     get_repository,
 )
+from app.api.real_dashboard import REAL_DASHBOARD_HTML, REAL_DETAIL_HTML
+from app.api.realdata import router as real_router
 from app.auction_engine.anomaly import detect_anomalies
 from app.auction_engine.valuation import AuctionCostInputs, value_auction
 from app.core.config import get_settings
@@ -45,6 +47,8 @@ from app.property_master.pressure import seller_pressure_score
 settings = get_settings()
 
 app = FastAPI(title=settings.api_title, version=settings.api_version)
+
+app.include_router(real_router)
 
 DEMO_WARNING = (
     "Demo repository is seeded with SYNTHETIC data for illustration only; "
@@ -407,6 +411,16 @@ def macro_context_endpoint(req: schemas.MacroPanelRequest) -> dict:
 @app.get("/", response_class=HTMLResponse, tags=["ops"])
 def dashboard() -> str:
     return DASHBOARD_HTML
+
+
+@app.get("/real", response_class=HTMLResponse, tags=["ops"])
+def real_dashboard() -> str:
+    return REAL_DASHBOARD_HTML
+
+
+@app.get("/real/{native_id}", response_class=HTMLResponse, tags=["ops"])
+def real_detail(native_id: str) -> str:
+    return REAL_DETAIL_HTML.replace("__NATIVE_ID__", native_id)
 
 
 DASHBOARD_HTML = """<!doctype html>
