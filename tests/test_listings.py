@@ -93,6 +93,31 @@ def test_observe_content_hash_change_does_not_duplicate(tmp_path):
     assert len(store.current()) == 1
 
 
+def test_normalize_comune():
+    from app.acquisition.listings import normalize_comune
+
+    assert normalize_comune("RIVA DEL GARDA") == "Riva del Garda"
+    assert normalize_comune("riva del garda") == "Riva del Garda"
+    assert normalize_comune("Pergine Valsugana") == "Pergine Valsugana"
+    assert normalize_comune("") == ""
+
+
+def test_group_candidates_conservative():
+    from app.api.realdata import group_candidates
+
+    listings = [
+        {"source": "a", "native_id": "1", "comune": "Arco", "typology": "appartamento", "surface_m2": 100.0, "url": "u1"},
+        {"source": "b", "native_id": "2", "comune": "Arco", "typology": "appartamento", "surface_m2": 105.0, "url": "u2"},
+        {"source": "b", "native_id": "3", "comune": "Arco", "typology": "appartamento", "surface_m2": 200.0, "url": "u3"},
+        {"source": "a", "native_id": "4", "comune": "Arco", "typology": "appartamento", "surface_m2": 101.0, "url": "u4"},
+    ]
+    groups = group_candidates(listings)
+    assert len(groups) == 1  # only the 100/105 cross-source pair groups
+    assert groups[0]["confidence"] == "provisional"
+    ids = {m["native_id"] for m in groups[0]["listings"]}
+    assert ids == {"1", "2"}
+
+
 def test_listing_store_parser_version_change_reobserves(tmp_path):
     store = ListingStore(tmp_path / "listings.jsonl")
     a = Listing(source="tecnocasa_it", native_id="1", price=208000.0, content_hash="h1", parser_version="v1")

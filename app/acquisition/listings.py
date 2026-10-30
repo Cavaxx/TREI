@@ -163,6 +163,29 @@ class ListingStore:
             latest[rec.get("key", "")] = rec
         return list(latest.values())
 
+    def renormalize_comuni(self) -> int:
+        """Normalize the ``comune`` field of existing records and recompute their
+        signature (one-off migration). Returns the number of changed records."""
+        changed = 0
+        for rec in self._records:
+            cur = rec.get("comune") or ""
+            norm = normalize_comune(cur)
+            if norm and norm != cur:
+                rec["comune"] = norm
+                changed += 1
+            # recompute signature from the stored fields (best effort)
+            sig = (
+                rec.get("price"), rec.get("surface_m2"), rec.get("rooms"), rec.get("bedrooms"),
+                rec.get("bathrooms"), rec.get("title"), rec.get("comune"), rec.get("typology"),
+                rec.get("contract"), rec.get("energy_class"), rec.get("floor"), rec.get("elevator"),
+                rec.get("latitude"), rec.get("longitude"), rec.get("price_qualifier"),
+                rec.get("previous_price"), rec.get("discount"),
+            )
+            rec["signature"] = list(sig)
+        if changed:
+            self._rewrite()
+        return changed
+
     def history(self, native_id: str) -> list[dict]:
         return [r for r in self._records if r.get("native_id") == native_id]
 
@@ -186,6 +209,30 @@ class ListingStore:
             self._records = order
             self._rewrite()
         return removed
+
+
+#: Lowercase particles kept lowercase in Italian title case.
+_IT_PARTICLES = {"del", "della", "di", "de", "d", "e", "ed", "la", "le", "il", "lo", "in", "sul", "sui", "sugli", "sulla", "sulle", "a", "al", "ai", "da", "dal", "dai", "con", "per", "tra", "fra", "nel", "nella", "nei", "nelle", "dello", "degli", "delle"}
+
+
+def normalize_comune(name: str) -> str:
+    """Canonical Italian title-case for a municipality name.
+
+    Turns "RIVA DEL GARDA" or "riva del garda" into "Riva del Garda" so the same
+    comune from different sources aggregates together.
+    """
+    if not name:
+        return ""
+    words = name.strip().lower().split()
+    out = []
+    for i, w in enumerate(words):
+        if w in _IT_PARTICLES and i != 0:
+            out.append(w)
+        elif w.startswith("d'"):
+            out.append("d'" + w[2:].capitalize())
+        else:
+            out.append(w.capitalize())
+    return " ".join(out)
 
 
 def _int_of(text: str) -> int | None:
@@ -260,7 +307,7 @@ def parse_tecnocasa_detail(html_text: str, *, url: str, source: str, run_id: str
         discount=str(data.get("discount") or ""),
         surface_m2=surface,
         surface_definition="non_specificata",
-        comune=(data.get("city") or {}).get("title") or "",
+        comune=normalize_comune((data.get("city") or {}).get("title") or ""),
         province=(data.get("province") or {}).get("id") or "",
         zone=(data.get("district") or {}).get("title") or "",
         address=data.get("address") or "",
@@ -402,7 +449,7 @@ def parse_gabetti_detail(html_text: str, *, url: str, source: str, run_id: str) 
         currency="EUR",
         surface_m2=float(surface) if surface else None,
         surface_definition="non_specificata",
-        comune=comune_m.group(1) if comune_m else "",
+        comune=normalize_comune(comune_m.group(1)) if comune_m else "",
         province=comune_m.group(2) if comune_m else "",
         address=address_m.group(1) if address_m else "",
         rooms=rooms,

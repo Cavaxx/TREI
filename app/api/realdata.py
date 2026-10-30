@@ -139,6 +139,69 @@ def portals_status() -> dict:
     return {"portals": out, "demo_data": False}
 
 
+def group_candidates(listings: list[dict]) -> list[dict]:
+    """Conservative cross-source candidate groups.
+
+    Two listings from *different* sources with the same normalized comune, the
+    same typology and a surface within ±10% form a **provisional** candidate group
+    (never a confirmed unique property). Price is never used as merge evidence.
+    """
+    groups: list[dict] = []
+    used: set[int] = set()
+    for i, a in enumerate(listings):
+        if i in used:
+            continue
+        members = [a]
+        for j in range(i + 1, len(listings)):
+            b = listings[j]
+            if j in used or a.get("source") == b.get("source"):
+                continue
+            if (a.get("comune") or "").lower() != (b.get("comune") or "").lower():
+                continue
+            if (a.get("typology") or "").lower() != (b.get("typology") or "").lower():
+                continue
+            sa, sb = a.get("surface_m2"), b.get("surface_m2")
+            if not (isinstance(sa, (int, float)) and isinstance(sb, (int, float)) and sa > 0 and sb > 0):
+                continue
+            if abs(sa - sb) / max(sa, sb) <= 0.10:
+                members.append(b)
+                used.add(j)
+        if len(members) >= 2:
+            used.add(i)
+            groups.append(
+                {
+                    "comune": a.get("comune"),
+                    "typology": a.get("typology"),
+                    "surface_m2": a.get("surface_m2"),
+                    "confidence": "provisional",
+                    "evidence": ["comune", "tipologia", "superficie (±10%)"],
+                    "listings": [{"source": m.get("source"), "native_id": m.get("native_id"), "url": m.get("url")} for m in members],
+                }
+            )
+    return groups
+
+
+@router.get("/groups")
+def property_groups() -> dict:
+    """Provisional cross-source candidate property groups (dedup NOT confirmed)."""
+    listings = _listings()
+    groups = group_candidates(listings)
+    grouped_ids = {lid for g in groups for lid in (m["native_id"] for m in g["listings"])}
+    exclusive = {}
+    for r in listings:
+        if r.get("native_id") not in grouped_ids:
+            exclusive[r.get("source")] = exclusive.get(r.get("source"), 0) + 1
+    return {
+        "listings": len(listings),
+        "candidate_groups": len(groups),
+        "listings_in_groups": len(grouped_ids),
+        "groups": groups,
+        "exclusive_by_source": exclusive,
+        "note": "gruppi candidati provvisori, NON immobili unici certificati",
+        "demo_data": False,
+    }
+
+
 @router.get("/statistics")
 def statistics(indicator: str | None = None) -> dict:
     rows = [r for r in _observations() if not r.get("superseded")]
