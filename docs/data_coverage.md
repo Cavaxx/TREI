@@ -28,22 +28,29 @@ Fonte: Istat / ISPAT. Navigazione ASP.NET cookieless (richiede browser).
   il totale provinciale è una riga distinta, non va sommato alle comunità.
 - Licenza di riuso: `terms_verified: false` (robots.txt 404 ≠ licenza).
 
-## Annunci immobiliari (campione, 2 fonti indipendenti)
+## Annunci immobiliari (2 fonti indipendenti, manifest completo Tecnocasa)
 
 | Fonte | Gruppo | Annunci | Metodo |
 |---|---|---|---|
-| Tecnocasa (`www.tecnocasa.it`) | Tecnocasa | 100 | HTTP (JSON in `<estate-show-v1>`) |
+| Tecnocasa (`www.tecnocasa.it`) | Tecnocasa | 185 | HTTP (JSON in `<estate-show-v1>`) |
 | Gabetti (`www.gabetti.it`) | Gabetti Group | 7 | HTTP (meta tag) |
 
-Totale **107 annunci** da **2 gruppi indipendenti**, distribuiti su 35 comuni
-(Trento 9, Rovereto 5, Folgaria 10, ecc.). Gabetti in Trento copre solo l'Alto
-Garda. Comuni normalizzati (`normalize_comune`); `rooms`/`bedrooms`/`bathrooms`
-distinti. Dedup per firma stabile dei campi (non per hash HTML). Gruppi candidati
-cross-fonte: 0 (le due fonti non si sovrappongono ancora).
+Totale **192 annunci** da 2 gruppi indipendenti. Tecnocasa: **manifest completo** —
+185 URL scoperti, 184 processati (99 revisit, 85 nuovi, 1 non più disponibile),
+backlog 0. Gabetti in Trento copre solo l'Alto Garda. Dedup per firma stabile;
+rilevazioni (visite) separate dagli stati (contenuto). Gruppi candidati cross-fonte: 0.
 
-Il campione non rappresenta l'intero mercato provinciale e la copertura del mercato
-resta **non determinabile**. La terza fonte indipendente non è ancora attiva
-(Tempocasa dietro Cloudflare, RE/MAX sitemap solo blog).
+Il campione non rappresenta l'intero mercato provinciale; copertura del mercato
+**non determinabile**. Terza fonte non ancora attiva (Tempocasa Cloudflare, RE/MAX
+sitemap blog).
+
+## Macro
+
+| Serie | Fonte | Chiave | Osservazioni | Stato |
+|---|---|---|---|---|
+| Tassi mutui nuove operazioni (Italia) | BCE | MIR.M.IT.B.A2C.A.R.A.2250.EUR.N | 140 (mensile 2015–) | acquisita |
+| Indice NIC (Italia) | ISTAT | (dataflow non risolto) | 0 | bloccato (SSL sdmx.istat.it) |
+
 
 
 
