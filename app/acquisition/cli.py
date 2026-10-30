@@ -152,6 +152,14 @@ def _cmd_listings_gabetti(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_macro(args: argparse.Namespace) -> int:
+    from app.acquisition.macro import run_macro
+
+    report = run_macro(store_path=args.store)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_env_file()
     parser = argparse.ArgumentParser(prog="trei-acquire", description="TREI acquisition CLI")
@@ -190,6 +198,10 @@ def main(argv: list[str] | None = None) -> int:
     p_gabetti.add_argument("--store", default=None)
     p_gabetti.add_argument("--max-listings", dest="max_listings", type=int, default=15)
     p_gabetti.set_defaults(func=_cmd_listings_gabetti)
+
+    p_macro = sub.add_parser("macro", help="acquire macro series (ECB mortgage rate, ISTAT CPI)")
+    p_macro.add_argument("--store", default=None)
+    p_macro.set_defaults(func=_cmd_macro)
 
     args = parser.parse_args(argv)
     return args.func(args)

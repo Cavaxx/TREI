@@ -49,18 +49,34 @@ def test_parse_tecnocasa_detail_maps_fields():
     assert listing.contract == "vendita"
 
 
-def test_listing_store_idempotent_and_history(tmp_path):
-    store = ListingStore(tmp_path / "listings.jsonl")
-    a = Listing(source="tecnocasa_it", native_id="1", price=208000.0, content_hash="h1")
-    b = Listing(source="tecnocasa_it", native_id="1", price=208000.0, content_hash="h1")
+def test_same_run_is_idempotent(tmp_path):
+    store = ListingStore(tmp_path / "l.jsonl")
+    a = Listing(source="s", native_id="1", price=100.0, run_id="r1")
+    b = Listing(source="s", native_id="1", price=100.0, run_id="r1")
     assert store.observe(a)["new"] is True
-    assert store.observe(b)["stored"] is False  # identical -> no-op
+    assert store.observe(b)["stored"] is False  # same run, same listing -> no-op
     assert len(store.current()) == 1
 
-    c = Listing(source="tecnocasa_it", native_id="1", price=198000.0, content_hash="h2")
-    res = store.observe(c)
-    assert res["price_changed"] is True
-    assert len(store.history("1")) == 2  # history preserved, not overwritten
+
+def test_revisit_without_change_is_recorded(tmp_path):
+    store = ListingStore(tmp_path / "l.jsonl")
+    a = Listing(source="s", native_id="1", price=100.0, run_id="r1")
+    b = Listing(source="s", native_id="1", price=100.0, run_id="r2")
+    assert store.observe(a)["new"] is True
+    res = store.observe(b)
+    assert res["stored"] is True and res["revisit"] is True  # rilevazione kept, no new state
+    assert len(store.current()) == 1
+    assert store.visits() == 1
+    assert store.snapshots() == 1
+
+
+def test_price_a_to_b_to_a_preserves_history(tmp_path):
+    store = ListingStore(tmp_path / "l.jsonl")
+    assert store.observe(Listing(source="s", native_id="1", price=100.0, run_id="r1"))["new"] is True
+    assert store.observe(Listing(source="s", native_id="1", price=200.0, run_id="r2"))["price_changed"] is True
+    res = store.observe(Listing(source="s", native_id="1", price=100.0, run_id="r3"))
+    assert res["price_changed"] is True  # A -> B -> A: returning to A is an event
+    assert [h["price"] for h in store.history("1")] == [100.0, 200.0, 100.0]
 
 
 GABETTI_HTML = """<html><head>
@@ -84,12 +100,12 @@ def test_parse_gabetti_detail_from_meta():
     assert listing.typology == "appartamento"
 
 
-def test_observe_content_hash_change_does_not_duplicate(tmp_path):
+def test_content_hash_change_does_not_duplicate_state(tmp_path):
     store = ListingStore(tmp_path / "l.jsonl")
-    a = Listing(source="s", native_id="1", price=100.0, content_hash="h1")
-    b = Listing(source="s", native_id="1", price=100.0, content_hash="h2")  # different raw hash, same fields
+    a = Listing(source="s", native_id="1", price=100.0, content_hash="h1", run_id="r1")
+    b = Listing(source="s", native_id="1", price=100.0, content_hash="h2", run_id="r2")
     assert store.observe(a)["new"] is True
-    assert store.observe(b)["stored"] is False  # signature unchanged -> no-op
+    assert store.observe(b)["revisit"] is True  # same fields, different raw hash -> revisit, not new state
     assert len(store.current()) == 1
 
 
@@ -120,7 +136,8 @@ def test_group_candidates_conservative():
 
 def test_listing_store_parser_version_change_reobserves(tmp_path):
     store = ListingStore(tmp_path / "listings.jsonl")
-    a = Listing(source="tecnocasa_it", native_id="1", price=208000.0, content_hash="h1", parser_version="v1")
-    b = Listing(source="tecnocasa_it", native_id="1", price=208000.0, content_hash="h1", parser_version="v2")
+    a = Listing(source="tecnocasa_it", native_id="1", price=208000.0, parser_version="v1", run_id="r1")
+    b = Listing(source="tecnocasa_it", native_id="1", price=208000.0, parser_version="v2", run_id="r2")
     assert store.observe(a)["new"] is True
-    assert store.observe(b)["stored"] is True  # parser change re-stores
+    assert store.observe(b)["revisit"] is False  # parser change -> new content record
+    assert store.snapshots() == 2

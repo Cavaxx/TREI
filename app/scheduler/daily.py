@@ -39,6 +39,9 @@ def _acquire_lock(path: Path) -> object | None:
 
 
 def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None = None) -> dict:
+    from app.core.envfile import load_env_file
+
+    load_env_file()
     checkpoint_path = Path(checkpoint_path) if checkpoint_path else CHECKPOINT_PATH
     lock_path = Path(lock_path) if lock_path else LOCK_PATH
     settings = get_settings()

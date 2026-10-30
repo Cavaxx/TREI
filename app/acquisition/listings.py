@@ -121,33 +121,58 @@ class ListingStore:
             if line.strip():
                 self._records.append(json.loads(line))
 
+    def _content_records(self, key: str) -> list[dict]:
+        """Content/state records for a key (a visit is NOT a content record)."""
+        return [r for r in self._records if r.get("key") == key and r.get("content_changed", True)]
+
     def observe(self, listing: Listing) -> dict:
+        """Record one visit.
+
+        * a visit with unchanged content appends a ``content_changed=False`` record
+          (the rilevazione is kept even though the state did not change);
+        * a visit with new/changed content appends a ``content_changed=True`` record;
+        * re-running the same run (same ``run_id``) is idempotent.
+        """
         rec = listing.to_dict()
         key = listing.key()
         sig = list(listing.signature())
-        prior = [r for r in self._records if r.get("key") == key]
+        visit_id = f"{listing.run_id}:{key}"
         rec["key"] = key
         rec["signature"] = sig
-        if prior:
-            last = prior[-1]
-            same = (
-                last.get("signature") == sig
-                and last.get("parser_version") == rec.get("parser_version")
-            )
-            if same:
-                last["last_seen_at"] = rec["observed_at"]
-                self._rewrite()
-                return {"stored": False, "new": False, "price_changed": False, "key": key}
-            rec["first_seen_at"] = prior[0].get("first_seen_at") or prior[0].get("observed_at")
+        rec["visit_id"] = visit_id
+
+        if any(r.get("visit_id") == visit_id for r in self._records):
+            return {"stored": False, "new": False, "price_changed": False, "revisit": False, "key": key}
+
+        content = self._content_records(key)
+        latest = content[-1] if content else None
+        same_content = bool(
+            latest
+            and latest.get("signature") == sig
+            and latest.get("parser_version") == rec.get("parser_version")
+        )
+
+        if same_content:
+            rec["content_changed"] = False
+            rec["first_seen_at"] = latest.get("first_seen_at") or latest.get("observed_at")
+            rec["last_seen_at"] = rec["observed_at"]
         else:
-            rec["first_seen_at"] = rec["observed_at"]
-        rec["last_seen_at"] = rec["observed_at"]
+            rec["content_changed"] = True
+            rec["first_seen_at"] = (content[0].get("first_seen_at") if content else rec["observed_at"])
+            rec["last_seen_at"] = rec["observed_at"]
+
         self._records.append(rec)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
-        price_changed = bool(prior and prior[-1].get("price") != rec.get("price"))
-        return {"stored": True, "new": not prior, "price_changed": price_changed, "key": key}
+        price_changed = bool(latest and latest.get("price") != rec.get("price"))
+        return {
+            "stored": True,
+            "new": not content,
+            "price_changed": price_changed,
+            "revisit": same_content,
+            "key": key,
+        }
 
     def _rewrite(self) -> None:
         with self.path.open("w", encoding="utf-8") as handle:
@@ -158,10 +183,28 @@ class ListingStore:
         return list(self._records)
 
     def current(self) -> list[dict]:
+        """Latest content/state per key; ``last_seen_at`` = latest visit timestamp."""
         latest: dict[str, dict] = {}
+        last_seen: dict[str, str] = {}
         for rec in self._records:
-            latest[rec.get("key", "")] = rec
-        return list(latest.values())
+            key = rec.get("key", "")
+            last_seen[key] = max(last_seen.get(key, ""), rec.get("observed_at") or "")
+            if rec.get("content_changed", True):
+                latest[key] = rec
+        out = []
+        for key, rec in latest.items():
+            rec = dict(rec)
+            rec["last_seen_at"] = last_seen.get(key) or rec.get("last_seen_at") or rec.get("observed_at")
+            out.append(rec)
+        return out
+
+    def visits(self) -> int:
+        """Number of visit (rilevazione) records with unchanged content."""
+        return sum(1 for r in self._records if r.get("content_changed") is False)
+
+    def snapshots(self) -> int:
+        """Number of content/state records (distinct content versions)."""
+        return sum(1 for r in self._records if r.get("content_changed", True))
 
     def renormalize_comuni(self) -> int:
         """Normalize the ``comune`` field of existing records and recompute their
@@ -187,20 +230,23 @@ class ListingStore:
         return changed
 
     def history(self, native_id: str) -> list[dict]:
-        return [r for r in self._records if r.get("native_id") == native_id]
+        """Content/state changes for a listing (NOT raw visits)."""
+        return [r for r in self._records if r.get("native_id") == native_id and r.get("content_changed", True)]
 
     def compact(self) -> int:
-        """Remove snapshots with the same (key, signature), keeping the earliest
-        ``first_seen_at`` and latest ``last_seen_at``. Returns removed count."""
+        """Collapse duplicate *content* records with the same (key, signature);
+        visit records are always preserved. Returns removed count."""
         seen: dict[tuple, dict] = {}
         order: list[dict] = []
         removed = 0
         for rec in self._records:
+            if not rec.get("content_changed", True):
+                order.append(rec)
+                continue
             gkey = (rec.get("key", ""), tuple(rec.get("signature") or ()))
             if gkey in seen:
                 prev = seen[gkey]
                 prev["first_seen_at"] = min(prev.get("first_seen_at") or "", rec.get("first_seen_at") or "")
-                prev["last_seen_at"] = max(prev.get("last_seen_at") or "", rec.get("last_seen_at") or "")
                 removed += 1
             else:
                 seen[gkey] = rec
