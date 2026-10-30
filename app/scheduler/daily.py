@@ -13,7 +13,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.core.config import PROJECT_ROOT, get_settings
+from app.core.config import PROJECT_ROOT
 
 CHECKPOINT_PATH = PROJECT_ROOT / "var" / "scheduler" / "daily.json"
 LOCK_PATH = PROJECT_ROOT / "var" / "scheduler" / "daily.lock"
@@ -44,10 +44,11 @@ def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None 
     load_env_file()
     checkpoint_path = Path(checkpoint_path) if checkpoint_path else CHECKPOINT_PATH
     lock_path = Path(lock_path) if lock_path else LOCK_PATH
-    settings = get_settings()
-    #: Listings are HTTP records, not browser sessions; reuse the pilot record
-    #: ceiling as the daily per-source cap (configurable via TREI_BROWSER_MAX_RECORDS_PER_SOURCE).
-    limit = max_listings or settings.browser_max_records_per_source
+    #: Listings are HTTP records, not browser sessions. The daily job fetches ALL
+    #: discovered URLs so it both updates known listings (revisits) and discovers
+    #: new ones — it never re-fetches only the first N. A per-run cap (``max_listings``)
+    #: is still honored when passed explicitly.
+    limit = max_listings
 
     lock = _acquire_lock(lock_path)
     if lock is None:
@@ -60,12 +61,14 @@ def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None 
 
         for name, runner in (("tecnocasa_it", run_listings_pilot), ("gabetti_it", run_gabetti_pilot)):
             try:
-                r = runner(max_listings=limit if name == "tecnocasa_it" else 30)
+                r = runner(max_listings=limit)
                 report["sources"][name] = {
                     "status": r.get("status"),
                     "records": r.get("records"),
                     "stored": r.get("stored"),
-                    "errors": len(r.get("errors", [])),
+                    "discovered": r.get("discovered"),
+                    "backlog": r.get("backlog"),
+                    "errors": r.get("errors") if isinstance(r.get("errors"), int) else len(r.get("errors", [])),
                 }
             except Exception as exc:  # noqa: BLE001
                 report["sources"][name] = {"status": "failed", "error": str(exc)}

@@ -569,8 +569,8 @@ def discover_gabetti_urls(*, max_urls: int = 200, timeout: float = 30.0) -> list
     return urls
 
 
-def run_gabetti_pilot(*, store_path=None, max_listings: int = 15, source: str = "gabetti_it") -> dict:
-    """Discover and ingest a small, explicit sample of Gabetti Trento listings."""
+def run_gabetti_pilot(*, store_path=None, max_listings: int | None = None, source: str = "gabetti_it") -> dict:
+    """Discover and ingest Gabetti Trento listings (all discovered by default)."""
     import time
     import uuid
 
@@ -581,12 +581,13 @@ def run_gabetti_pilot(*, store_path=None, max_listings: int = 15, source: str = 
     run_id = "gb-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:6]
     started = time.monotonic()
 
-    urls = discover_gabetti_urls(max_urls=max_listings * 2)
+    urls = discover_gabetti_urls(max_urls=100_000 if max_listings is None else max_listings * 2)
+    limit = max_listings if max_listings is not None else len(urls)
     report = {"run_id": run_id, "source": source, "method": "http", "status": "completed", "discovered": len(urls), "records": 0, "stored": 0, "price_changes": 0, "errors": []}
 
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=settings.request_timeout_s, follow_redirects=True, headers=headers) as client:
-        for url in urls[:max_listings]:
+        for url in urls[:limit]:
             try:
                 resp = client.get(url)
             except httpx.HTTPError as exc:
