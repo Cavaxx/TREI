@@ -396,8 +396,23 @@ def discover_tecnocasa_urls(*, province: str = "trento", max_urls: int = 200, ti
     return urls
 
 
-def run_listings_pilot(*, store_path=None, max_listings: int = 15, source: str = "tecnocasa_it") -> dict:
-    """Discover and ingest a small, explicit sample of Tecnocasa Trento listings."""
+def _classify_http(status: int) -> str:
+    if status in (404, 410):
+        return "not_available"
+    if status in (401, 403):
+        return "blocked"
+    if status >= 500:
+        return "error"
+    return f"http_{status}"
+
+
+def run_listings_pilot(*, store_path=None, max_listings: int | None = None, source: str = "tecnocasa_it") -> dict:
+    """Discover and ingest Tecnocasa Trento listings, producing a manifest.
+
+    Fetches every discovered URL (up to ``max_listings``; ``None`` = all) and
+    classifies each URL: valid_new, revisit, not_available, blocked, error,
+    no_data. URLs beyond ``max_listings`` are reported as ``backlog``.
+    """
     import time
     import uuid
 
@@ -408,28 +423,55 @@ def run_listings_pilot(*, store_path=None, max_listings: int = 15, source: str =
     run_id = "tc-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:6]
     started = time.monotonic()
 
-    urls = discover_tecnocasa_urls(province="trento", max_urls=max_listings * 2)
-    report = {"run_id": run_id, "source": source, "method": "http", "status": "completed", "discovered": len(urls), "records": 0, "stored": 0, "price_changes": 0, "errors": []}
+    urls = discover_tecnocasa_urls(province="trento", max_urls=100_000)
+    limit = max_listings if max_listings is not None else len(urls)
+    report = {
+        "run_id": run_id,
+        "source": source,
+        "method": "http",
+        "status": "completed",
+        "discovered": len(urls),
+        "processed": 0,
+        "backlog": max(0, len(urls) - limit),
+        "records": 0,
+        "stored": 0,
+        "revisits": 0,
+        "price_changes": 0,
+        "errors": 0,
+        "manifest": [],
+    }
 
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=settings.request_timeout_s, follow_redirects=True, headers=headers) as client:
-        for url in urls[:max_listings]:
+        for url in urls[:limit]:
+            outcome: dict = {"url": url, "outcome": ""}
             try:
                 resp = client.get(url)
             except httpx.HTTPError as exc:
-                report["errors"].append({"url": url, "error": str(exc)})
+                outcome["outcome"] = "error"
+                outcome["detail"] = str(exc)[:120]
+                report["errors"] += 1
+                report["manifest"].append(outcome)
                 continue
             if resp.status_code != 200:
-                report["errors"].append({"url": url, "error": f"HTTP {resp.status_code}"})
+                outcome["outcome"] = _classify_http(resp.status_code)
+                report["errors"] += 1
+                report["manifest"].append(outcome)
                 continue
             listing = parse_tecnocasa_detail(resp.text, url=url, source=source, run_id=run_id)
             if listing is None:
-                report["errors"].append({"url": url, "error": "no structured data"})
+                outcome["outcome"] = "no_data"
+                report["errors"] += 1
+                report["manifest"].append(outcome)
                 continue
             result = store.observe(listing)
             report["records"] += 1
+            report["processed"] += 1
             report["stored"] += 1 if result.get("stored") else 0
+            report["revisits"] += 1 if result.get("revisit") else 0
             report["price_changes"] += 1 if result.get("price_changed") else 0
+            outcome["outcome"] = "revisit" if result.get("revisit") else ("valid_new" if result.get("new") else "valid_updated")
+            report["manifest"].append(outcome)
             time.sleep(1.0)
 
     report["current"] = len(store.current())

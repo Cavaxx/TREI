@@ -189,9 +189,9 @@ def main(argv: list[str] | None = None) -> int:
     p_migrate.add_argument("--data-root", dest="data_root", default=None)
     p_migrate.set_defaults(func=_cmd_migrate)
 
-    p_listings = sub.add_parser("listings-pilot", help="ingest a small sample of Tecnocasa Trento listings")
+    p_listings = sub.add_parser("listings-pilot", help="ingest Tecnocasa Trento listings (all discovered by default)")
     p_listings.add_argument("--store", default=None)
-    p_listings.add_argument("--max-listings", dest="max_listings", type=int, default=15)
+    p_listings.add_argument("--max-listings", dest="max_listings", type=int, default=None)
     p_listings.set_defaults(func=_cmd_listings_pilot)
 
     p_gabetti = sub.add_parser("listings-gabetti", help="ingest a small sample of Gabetti Trento listings")
