@@ -32,16 +32,18 @@ Fonte: Istat / ISPAT. Navigazione ASP.NET cookieless (richiede browser).
 
 | Fonte | Gruppo | Annunci | Metodo |
 |---|---|---|---|
-| Tecnocasa (`www.tecnocasa.it`) | Tecnocasa | 15 | HTTP (JSON in `<estate-show-v1>`) |
+| Tecnocasa (`www.tecnocasa.it`) | Tecnocasa | 100 | HTTP (JSON in `<estate-show-v1>`) |
 | Gabetti (`www.gabetti.it`) | Gabetti Group | 7 | HTTP (meta tag) |
 
-Totale **22 annunci** da **2 gruppi indipendenti**. Campo `rooms` (locali) distinto
-da `bedrooms` (camere) e `bathrooms`. Gabetti espone solo i campi core (tipologia,
-indirizzo, comune, provincia, prezzo, superficie, locali, bagni): classe energetica,
-piano e coordinate restano `non disponibile` per quella fonte.
+Totale **107 annunci** da **2 gruppi indipendenti**, distribuiti su 35 comuni
+(Trento 9, Rovereto 5, Folgaria 10, ecc.). Gabetti in Trento copre solo l'Alto
+Garda. Comuni normalizzati (`normalize_comune`); `rooms`/`bedrooms`/`bathrooms`
+distinti. Dedup per firma stabile dei campi (non per hash HTML). Gruppi candidati
+cross-fonte: 0 (le due fonti non si sovrappongono ancora).
 
-Il campione non rappresenta l'intero mercato provinciale e la quota di copertura del
-mercato resta **non determinabile** (manca un denominatore affidabile). La terza fonte
-indipendente prevista non è ancora stata aggiunta.
+Il campione non rappresenta l'intero mercato provinciale e la copertura del mercato
+resta **non determinabile**. La terza fonte indipendente non è ancora attiva
+(Tempocasa dietro Cloudflare, RE/MAX sitemap solo blog).
+
 
 
