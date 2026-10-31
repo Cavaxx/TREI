@@ -178,11 +178,17 @@ def availability(*, store_records: list[dict], source: str | None = None,
             if complete_discovered and url not in complete_discovered:
                 out[key] = "to_reconfirm"
                 continue
-            # Partial run that did not visit this URL: keep the previous state.
-            if url not in last_run_urls and complete_at is not None:
+            # No complete run for this source yet: freshness window on the
+            # last successful visit decides between available and uncertain.
+            ok_events = [e for e in status.events_for(url) if e.get("outcome") in SUCCESS_OUTCOMES]
+            last_ok = max((_parse_dt(e.get("observed_at") or "") for e in ok_events), default=None)
+            if complete_at is None:
                 cutoff = now - timedelta(hours=FRESH_HOURS)
-                ok_events = [e for e in status.events_for(url) if e.get("outcome") in SUCCESS_OUTCOMES]
-                last_ok = max((_parse_dt(e.get("observed_at") or "") for e in ok_events), default=None)
+                out[key] = "available" if last_ok and last_ok >= cutoff else "uncertain"
+                continue
+            # Partial run that did not visit this URL: keep the previous state.
+            if url not in last_run_urls:
+                cutoff = now - timedelta(hours=FRESH_HOURS)
                 out[key] = "available" if last_ok and last_ok >= cutoff else "uncertain"
                 continue
             out[key] = "uncertain"
