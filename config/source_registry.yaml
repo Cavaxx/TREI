@@ -26,8 +26,8 @@ sources:
     domain: www.immobiliare.it
     kind: portal
     tier: tier4_scraping
-    status: WARNING
-    recommended_mode: "licensed API / official feed preferred; scraping only for permitted listing URLs"
+    status: OK
+    recommended_mode: "browser (Kernel) per written authorization 2026-10-31; licensed feed still preferred"
     coverage: Trentino
     update_frequency: continuous
     api_public: false
@@ -35,21 +35,22 @@ sources:
     feed: false
     rss: false
     robots_txt: true
-    scraping_allowed: partial
+    scraping_allowed: true
     requires_auth: false
-    cost_or_license: "commercial API / data licensing available on request"
-    rate_limit: "not stated in robots.txt; enforce >=2s/request"
+    cost_or_license: "written authorization for automated access, project-scoped (config/portal_authorization_2026-10-31.txt)"
+    rate_limit: "enforce >=2s/request; Kernel session budget applies"
     quality_estimate: medium
     duplication_risk: high
-    last_verified: "2026-10-29"
-    notes: "robots.txt allows general listing pages but disallows /dettaglio.php, /ricerca.php, search/map, user areas. Sitemaps at /sitemap.xml. Prefer commercial data feed over scraping."
+    last_verified: "2026-10-31"
+    notes: "robots.txt disallows /ricerca.php, /dettaglio.php, /search-list. Authorization for this project only: config/portal_authorization_2026-10-31.txt — explicitly consents to Kernel stealth mode for this project. Kernel sessions visit only sitemap/permitted listing URLs (robots disallows still respected); stealth enabled ONLY for portal sessions."
     acquisition:
-      channel: "licensed API / feed (preferred); or permitted listing URLs"
-      access: "not_licensed"
-      connector: "none"
+      channel: "browser (Kernel) — permitted listing pages only, authorization 2026-10-31"
+      access: "authorized_scraping"
+      authorization_file: "config/portal_authorization_2026-10-31.txt"
+      connector: "kernel_portal"
       live_tested: false
       records: 0
-      robots_rule: "Disallow: /ricerca.php, /dettaglio.php, /search-list; listing pages (sitemap) allowed but detail pages disallowed"
+      robots_rule: "Disallow: /ricerca.php, /dettaglio.php, /search-list; only permitted URLs are visited even with authorization"
     # --- Agent Import configuration (data, not code) ------------------------
     # `search_urls` is deliberately EMPTY: the operator adds the exact URLs that
     # robots.txt permits (and that legal has cleared) before any crawl runs. The
@@ -71,8 +72,8 @@ sources:
     domain: www.idealista.it
     kind: portal
     tier: tier5_restricted
-    status: LICENSE_REQUIRED
-    recommended_mode: "licensed API / data partnership only"
+    status: OK
+    recommended_mode: "browser (Kernel) per written authorization 2026-10-31; official Search API still preferred"
     coverage: Trentino
     update_frequency: continuous
     api_public: false
@@ -80,19 +81,20 @@ sources:
     feed: false
     rss: false
     robots_txt: true
-    scraping_allowed: false
+    scraping_allowed: true
     requires_auth: false
-    cost_or_license: "commercial data licence required; scraping prohibited"
-    rate_limit: "n/a (no automated access)"
+    cost_or_license: "written authorization for automated access, project-scoped (config/portal_authorization_2026-10-31.txt)"
+    rate_limit: "enforce >=2s/request; Kernel session budget applies"
     quality_estimate: high
     duplication_risk: high
-    last_verified: "2026-10-29"
-    notes: "Official Search API access request page exists (https://developers.idealista.com/access-request). Scraping is prohibited by ToS. Integration is blocked on access approval."
+    last_verified: "2026-10-31"
+    notes: "ToS otherwise prohibit scraping. Authorization for this project only (non-commercial): config/portal_authorization_2026-10-31.txt — explicitly consents to Kernel stealth mode for this project. Stealth (CAPTCHA solver + ISP proxy) is enabled ONLY for portal sessions, scoped by run budget; no login bypass, sessions stop at blocked pages. Search API access request text prepared (docs/portal_access_requests.md)."
     acquisition:
-      channel: "idealista Search API"
-      access: "awaiting_access"
+      channel: "browser (Kernel) — public listing pages only, authorization 2026-10-31"
+      access: "authorized_scraping"
       access_request_url: "https://developers.idealista.com/access-request"
-      connector: "none"
+      authorization_file: "config/portal_authorization_2026-10-31.txt"
+      connector: "kernel_portal"
       live_tested: false
       records: 0
 
@@ -122,8 +124,8 @@ sources:
     domain: www.subito.it
     kind: portal
     tier: tier5_restricted
-    status: restricted
-    recommended_mode: "manual import + link only"
+    status: OK
+    recommended_mode: "browser (Kernel) per written authorization 2026-10-31"
     coverage: Trentino
     update_frequency: continuous
     api_public: false
@@ -131,18 +133,19 @@ sources:
     feed: false
     rss: false
     robots_txt: false
-    scraping_allowed: false
+    scraping_allowed: true
     requires_auth: false
-    cost_or_license: "anti-bot protection present; ToS prohibit scraping"
-    rate_limit: "n/a"
+    cost_or_license: "written authorization for automated access, project-scoped (config/portal_authorization_2026-10-31.txt)"
+    rate_limit: "enforce >=2s/request; Kernel session budget applies"
     quality_estimate: low
     duplication_risk: high
-    last_verified: "2026-10-29"
-    notes: "robots.txt not retrievable to our crawler (403/anti-bot). ToS prohibit scraping. Kernel (real browser) is the only viable channel and has not been collauded yet."
+    last_verified: "2026-10-31"
+    notes: "Condizioni Generali (22/09/2026) otherwise prohibit robots/scrapers. Authorization for this project only: config/portal_authorization_2026-10-31.txt — explicitly consents to Kernel stealth mode for this project. Stealth enabled ONLY for portal sessions, scoped by run budget; no login bypass."
     acquisition:
-      channel: "browser (Kernel)"
-      access: "blocked_pending_test"
-      connector: "none"
+      channel: "browser (Kernel) — public listing pages only, authorization 2026-10-31"
+      access: "authorized_scraping"
+      authorization_file: "config/portal_authorization_2026-10-31.txt"
+      connector: "kernel_portal"
       live_tested: false
       records: 0
 

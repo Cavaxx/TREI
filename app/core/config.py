@@ -125,6 +125,11 @@ class Settings:
     crawl_max_requests: int = field(
         default_factory=lambda: int(os.environ.get("TREI_CRAWL_MAX_REQUESTS", "500"))
     )
+    #: Wall-clock ceiling on a single crawl job (seconds). Budget deferral is
+    #: recorded in the run ledger so the queue resumes instead of restarting.
+    crawl_max_seconds: float = field(
+        default_factory=lambda: float(os.environ.get("TREI_CRAWL_MAX_SECONDS", "1800"))
+    )
     #: Incremental crawl interval (minutes) per source when not overridden.
     crawl_incremental_minutes: int = field(
         default_factory=lambda: int(os.environ.get("TREI_CRAWL_INCREMENTAL_MIN", "180"))

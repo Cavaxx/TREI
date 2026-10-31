@@ -24,6 +24,19 @@ def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
+def next_cron_run(now: datetime | None = None) -> datetime:
+    """Next 07:15 Europe/Rome occurrence after ``now`` (the cron is DST-safe)."""
+    from zoneinfo import ZoneInfo
+
+    now = now or datetime.now(UTC)
+    rome = ZoneInfo("Europe/Rome")
+    local = now.astimezone(rome)
+    candidate = local.replace(hour=7, minute=15, second=0, microsecond=0)
+    if candidate <= local:
+        candidate = candidate + timedelta(days=1)
+    return candidate.astimezone(UTC)
+
+
 def _acquire_lock(path: Path) -> object | None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -67,7 +80,10 @@ def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None 
                     "records": r.get("records"),
                     "stored": r.get("stored"),
                     "discovered": r.get("discovered"),
+                    "attempted": r.get("attempted"),
                     "backlog": r.get("backlog"),
+                    "queue": r.get("queue"),
+                    "complete": r.get("complete"),
                     "errors": r.get("errors") if isinstance(r.get("errors"), int) else len(r.get("errors", [])),
                 }
             except Exception as exc:  # noqa: BLE001
@@ -75,7 +91,8 @@ def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None 
                 report["errors"].append({"source": name, "error": str(exc)})
     finally:
         report["finished_at"] = _now_iso()
-        report["next_run_at"] = (datetime.now(UTC) + timedelta(hours=INTERVAL_HOURS)).isoformat()
+        report["next_run_at"] = next_cron_run().isoformat()
+        report["schedule_note"] = "cron riga DST-safe: 07:15 Europe/Rome (TZ=Europe/Rome guard, cron 3.0pl1 non onora CRON_TZ)"
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         checkpoint_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if hasattr(lock, "close"):
@@ -89,7 +106,7 @@ def status(checkpoint_path=None) -> dict:
     if not path.exists():
         return {"status": "never_run", "next_run_at": "on demand (no timer registered)"}
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["next_run_at"] = (datetime.fromisoformat(data["finished_at"].replace("Z", "+00:00")) + timedelta(hours=INTERVAL_HOURS)).isoformat()
+    data["next_run_at"] = next_cron_run().isoformat()
     return data
 
 

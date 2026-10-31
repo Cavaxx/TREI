@@ -13,6 +13,7 @@ import statistics as _stats
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.acquisition.ledger import RunLedger, availability
 from app.acquisition.listings import ListingStore
 from app.acquisition.store import ObservationStore
 from app.core.config import PROJECT_ROOT
@@ -22,11 +23,23 @@ router = APIRouter(prefix="/api/v1/real", tags=["real-data"])
 LISTINGS_PATH = PROJECT_ROOT / "data" / "listings.jsonl"
 OBSERVATIONS_PATH = PROJECT_ROOT / "data" / "observations.jsonl"
 
+#: The single availability rule shared by store counts, API, UI and export.
+STATUS_LABELS = {
+    "available": "disponibile",
+    "to_reconfirm": "da riconfermare (404 o assente dalla sitemap; NON una vendita)",
+    "confirmed_unavailable": "non più disponibile (confermato; NON una vendita)",
+    "uncertain": "incerto (errore o non visitato nell'ultimo run)",
+}
+
 
 def _listings() -> list[dict]:
     if not LISTINGS_PATH.exists():
         return []
     return ListingStore(LISTINGS_PATH).current()
+
+
+def _status_map() -> dict[str, str]:
+    return availability(store_records=_listings())
 
 
 def _observations() -> list[dict]:
@@ -56,6 +69,8 @@ def list_listings(
     comune: str | None = None,
     source: str | None = None,
     typology: str | None = None,
+    unit_class: str | None = None,
+    availability: str | None = None,
     price_min: float | None = None,
     price_max: float | None = None,
     surface_min: float | None = None,
@@ -65,12 +80,17 @@ def list_listings(
     offset: int = Query(0, ge=0),
 ) -> dict:
     out = []
+    status = _status_map()
     for rec in _listings():
         if comune and (rec.get("comune") or "").lower() != comune.lower():
             continue
         if source and rec.get("source") != source:
             continue
         if typology and (rec.get("typology") or "").lower() != typology.lower():
+            continue
+        if unit_class and (rec.get("unit_class") or "") != unit_class:
+            continue
+        if availability and status.get(rec.get("key") or "") != availability:
             continue
         p = rec.get("price")
         if price_min is not None and (p is None or p < price_min):
@@ -84,12 +104,17 @@ def list_listings(
             continue
         item = dict(rec)
         item["price_m2"] = _price_m2(rec)
+        item["status"] = status.get(rec.get("key") or "", "uncertain")
         out.append(item)
 
     reverse = sort != "comune"
     out.sort(key=lambda r: (r.get(sort) is None, r.get(sort) or 0), reverse=reverse)
     total = len(out)
-    return {"count": total, "limit": limit, "offset": offset, "items": out[offset : offset + limit], "demo_data": False}
+    summary = {}
+    for st in ("available", "to_reconfirm", "confirmed_unavailable", "uncertain"):
+        summary[st] = sum(1 for r in out if r.get("status") == st)
+    return {"count": total, "limit": limit, "offset": offset, "items": out[offset : offset + limit],
+            "status_breakdown": summary, "status_labels": STATUS_LABELS, "demo_data": False}
 
 
 @router.get("/listings/{native_id}")
@@ -137,6 +162,37 @@ def portals_status() -> dict:
             }
         )
     return {"portals": out, "demo_data": False}
+
+
+@router.get("/runs")
+def runs_status() -> dict:
+    """Last run per source from the persisted run ledger (outcome + queue)."""
+    runs = RunLedger().all()
+    latest: dict[str, dict] = {}
+    for r in runs:
+        key = r.get("source") or "?"
+        if key not in latest or (r.get("started_at") or "") >= (latest[key].get("started_at") or ""):
+            latest[key] = r
+    out = []
+    for source, r in sorted(latest.items()):
+        out.append({
+            "source": source,
+            "run_id": r.get("run_id"),
+            "started_at": r.get("started_at"),
+            "finished_at": r.get("finished_at"),
+            "status": r.get("status"),
+            "complete": r.get("complete"),
+            "inferred": r.get("inferred", False),
+            "discovered": r.get("discovered"),
+            "attempted": r.get("attempted"),
+            "records": r.get("records"),
+            "outcomes": r.get("outcomes"),
+            "queue": r.get("queue"),
+            "errors": r.get("errors"),
+            "excluded_categories": r.get("excluded_categories"),
+            "note": r.get("note", ""),
+        })
+    return {"runs": out, "demo_data": False}
 
 
 def group_candidates(listings: list[dict]) -> list[dict]:
@@ -229,20 +285,32 @@ def statistics(indicator: str | None = None) -> dict:
 @router.get("/coverage")
 def coverage() -> dict:
     listings = _listings()
+    status = _status_map()
     obs = [r for r in _observations() if not r.get("superseded")]
     by_comune: dict[str, int] = {}
     by_source: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    by_unit_class: dict[str, int] = {}
     missing: dict[str, int] = {}
     for r in listings:
+        st = status.get(r.get("key") or "", "uncertain")
+        by_status[st] = by_status.get(st, 0) + 1
+        if st != "available":
+            continue
         by_comune[r.get("comune") or "?"] = by_comune.get(r.get("comune") or "?", 0) + 1
         by_source[r.get("source") or "?"] = by_source.get(r.get("source") or "?", 0) + 1
+        by_unit_class[r.get("unit_class") or "?"] = by_unit_class.get(r.get("unit_class") or "?", 0) + 1
         for field in ("price", "surface_m2", "typology", "published_at"):
             if r.get(field) in (None, ""):
                 missing[field] = missing.get(field, 0) + 1
     return {
-        "listings": len(listings),
-        "listings_by_comune": by_comune,
-        "listings_by_source": by_source,
+        "listings_registered": len(listings),
+        "listings_available": by_status.get("available", 0),
+        "status_breakdown": by_status,
+        "status_labels": STATUS_LABELS,
+        "available_by_comune": by_comune,
+        "available_by_source": by_source,
+        "available_by_unit_class": by_unit_class,
         "missing_fields": missing,
         "statistical_observations": len(obs),
         "statistical_indicators": sorted({r.get("indicator") for r in obs}),
@@ -252,7 +320,10 @@ def coverage() -> dict:
 
 @router.get("/prices")
 def prices(comune: str | None = None, min_n: int = Query(1, ge=1)) -> dict:
-    rows = _listings()
+    status = _status_map()
+    rows = [r for r in _listings()
+            if status.get(r.get("key") or "") == "available"
+            and (r.get("unit_class") or "") == "residenziale"]
     if comune:
         rows = [r for r in rows if (r.get("comune") or "").lower() == comune.lower()]
     groups: dict[str, list[float]] = {}
@@ -274,18 +345,22 @@ def prices(comune: str | None = None, min_n: int = Query(1, ge=1)) -> dict:
 def export_data(
     comune: str | None = None,
     source: str | None = None,
+    unit_class: str | None = None,
+    availability: str | None = None,
     price_min: float | None = None,
     price_max: float | None = None,
     surface_min: float | None = None,
     surface_max: float | None = None,
     format: str = Query("csv", pattern="^(csv|json)$"),
 ) -> object:
-    filtered = list_listings(comune=comune, source=source, price_min=price_min, price_max=price_max, surface_min=surface_min, surface_max=surface_max, limit=500, offset=0)
+    filtered = list_listings(comune=comune, source=source, unit_class=unit_class, availability=availability,
+                             price_min=price_min, price_max=price_max, surface_min=surface_min,
+                             surface_max=surface_max, limit=500, offset=0)
     items = filtered["items"]
     if format == "json":
-        return {"count": filtered["count"], "items": items, "demo_data": False}
+        return {"count": filtered["count"], "items": items, "status_breakdown": filtered["status_breakdown"], "demo_data": False}
 
-    fields = ["source", "native_id", "url", "title", "typology", "contract", "comune", "province", "price", "currency", "price_qualifier", "previous_price", "discount", "surface_m2", "surface_definition", "rooms", "bedrooms", "bathrooms", "floor", "elevator", "energy_class", "published_at", "observed_at", "first_seen_at", "last_seen_at", "price_m2"]
+    fields = ["source", "native_id", "url", "title", "typology", "contract", "unit_class", "comune", "province", "price", "currency", "price_qualifier", "previous_price", "discount", "surface_m2", "surface_definition", "rooms", "bedrooms", "bathrooms", "floor", "elevator", "energy_class", "published_at", "observed_at", "first_seen_at", "last_seen_at", "price_m2", "status"]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()

@@ -76,6 +76,15 @@ daily-run: ## Run one daily acquisition job (lock + checkpoint)
 daily-status: ## Show the last daily run and the next expected run
 	$(PY) -m app.scheduler.daily status
 
+cron-status: ## Show the TREI crontab entry (marker # TREI-DAILY)
+	$(PY) -m app.scheduler.cronops status
+
+cron-install: ## Install the DST-safe TREI daily entry (backs up first)
+	$(PY) -m app.scheduler.cronops install
+
+cron-disable: ## Remove ONLY the # TREI-DAILY entry (backs up first, refuses ambiguity)
+	$(PY) -m app.scheduler.cronops disable
+
 up: ## Start the container stack
 	docker compose -f docker/docker-compose.yml up --build
 

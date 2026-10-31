@@ -134,10 +134,13 @@ def test_group_candidates_conservative():
     assert ids == {"1", "2"}
 
 
-def test_listing_store_parser_version_change_reobserves(tmp_path):
+def test_listing_store_parser_version_change_does_not_reobserve(tmp_path):
     store = ListingStore(tmp_path / "listings.jsonl")
     a = Listing(source="tecnocasa_it", native_id="1", price=208000.0, parser_version="v1", run_id="r1")
     b = Listing(source="tecnocasa_it", native_id="1", price=208000.0, parser_version="v2", run_id="r2")
     assert store.observe(a)["new"] is True
-    assert store.observe(b)["revisit"] is False  # parser change -> new content record
-    assert store.snapshots() == 2
+    # Content identity depends on the extracted fields ONLY: a parser-version
+    # bump that maps the same fields identically must not create a new version.
+    assert store.observe(b)["revisit"] is True
+    assert store.snapshots() == 1
+    assert store.visits() == 1

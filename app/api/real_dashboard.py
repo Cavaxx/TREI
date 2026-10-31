@@ -31,6 +31,7 @@ button{padding:.3rem .8rem;border:1px solid #333;border-radius:4px;background:#f
  <label>Superficie min <input id="f-smin" type="number"></label>
  <label>Superficie max <input id="f-smax" type="number"></label>
  <label>Fonte <select id="f-source"><option value="">tutte</option></select></label>
+ <label>Disponibilità <select id="f-status"><option value="">tutte</option><option value="available">disponibili</option><option value="to_reconfirm">da riconfermare</option><option value="confirmed_unavailable">non più disponibili</option><option value="uncertain">incerte</option></select></label>
  <button onclick="loadListings()">Applica</button>
  <a href="/api/v1/real/export?format=csv"><button type="button">Esporta CSV</button></a>
  <a href="/api/v1/real/export?format=json"><button type="button">Esporta JSON</button></a>
@@ -40,7 +41,8 @@ button{padding:.3rem .8rem;border:1px solid #333;border-radius:4px;background:#f
 
 <div class="sec"><h2>Statistiche</h2><div id="stats"></div></div>
 <div class="sec"><h2>Copertura</h2><div id="coverage"></div></div>
-<div class="sec"><h2>€/m² (mediana campione)</h2><div id="prices"></div></div>
+<div class="sec"><h2>Ultimo run per fonte</h2><div id="runs"></div></div>
+<div class="sec"><h2>€/m² (mediana campione, solo disponibili residenziali)</h2><div id="prices"></div></div>
 
 <script>
 async function j(url){const r=await fetch(url);return r.ok?r.json():null;}
@@ -55,13 +57,14 @@ async function loadListings(){
   if(g('f-smin'))p.set('surface_min',g('f-smin'));
   if(g('f-smax'))p.set('surface_max',g('f-smax'));
   if(g('f-source'))p.set('source',g('f-source'));
+  if(g('f-status'))p.set('availability',g('f-status'));
   p.set('limit','200');
   const d=await j('/api/v1/real/listings?'+p.toString());
   const el=document.getElementById('listings');
   if(!d||!d.items||!d.items.length){el.innerHTML='<p class="empty">Nessun annuncio per questi filtri.</p>';return;}
-  let h='<p class="muted">'+d.count+' annunci</p><table><tr><th>Comune</th><th>Titolo</th><th>Prezzo</th><th>€/m²</th><th>m²</th><th>Tipologia</th><th>Fonte</th><th>Ultima oss.</th><th></th></tr>';
+  let h='<p class="muted">'+d.count+' annunci</p><table><tr><th>Comune</th><th>Titolo</th><th>Prezzo</th><th>€/m²</th><th>m²</th><th>Tipologia</th><th>Fonte</th><th>Stato</th><th>Ultima oss.</th><th></th></tr>';
   for(const r of d.items){
-    h+='<tr><td>'+esc(r.comune)+'</td><td>'+esc(r.title)+'</td><td>'+esc(r.price)+' €'+(r.price_qualifier?' ('+esc(r.price_qualifier)+')':'')+'</td><td>'+(r.price_m2!=null?esc(r.price_m2):'—')+'</td><td>'+esc(r.surface_m2)+'</td><td>'+esc(r.typology)+'</td><td>'+esc(r.source)+'</td><td class="mono">'+esc(r.observed_at)+'</td><td><a href="/real/'+esc(r.native_id)+'">scheda</a></td></tr>';
+    h+='<tr><td>'+esc(r.comune)+'</td><td>'+esc(r.title)+'</td><td>'+esc(r.price)+' €'+(r.price_qualifier?' ('+esc(r.price_qualifier)+')':'')+'</td><td>'+(r.price_m2!=null?esc(r.price_m2):'—')+'</td><td>'+esc(r.surface_m2)+'</td><td>'+esc(r.typology)+'</td><td>'+esc(r.source)+'</td><td>'+esc(r.status)+'</td><td class="mono">'+esc(r.observed_at)+'</td><td><a href="/real/'+esc(r.native_id)+'">scheda</a></td></tr>';
   }
   h+='</table>';
   el.innerHTML=h;
@@ -83,9 +86,24 @@ async function loadCoverage(){
   const d=await j('/api/v1/real/coverage');
   const el=document.getElementById('coverage');
   if(!d){el.innerHTML='<p class="empty">Non disponibile.</p>';return;}
-  el.innerHTML='<p>Annunci: <b>'+d.listings+'</b> · Osservazioni statistiche attive: <b>'+d.statistical_observations+'</b></p>'
-   +'<p class="muted">Annunci per comune: '+JSON.stringify(d.listings_by_comune)+'</p>'
+  el.innerHTML='<p>Annunci registrati: <b>'+d.listings_registered+'</b> · disponibili: <b>'+d.listings_available+'</b> · osservazioni statistiche attive: <b>'+d.statistical_observations+'</b></p>'
+   +'<p class="muted">Per stato: '+JSON.stringify(d.status_breakdown)+'</p>'
+   +'<p class="muted">Disponibili per fonte: '+JSON.stringify(d.available_by_source)+'</p>'
+   +'<p class="muted">Disponibili per classe: '+JSON.stringify(d.available_by_unit_class)+'</p>'
    +'<p class="muted">Indicatori statistici: '+d.statistical_indicators.join(', ')+'</p>';
+}
+
+async function loadRuns(){
+  const d=await j('/api/v1/real/runs');
+  const el=document.getElementById('runs');
+  if(!d||!d.runs.length){el.innerHTML='<p class="empty">Nessun run registrato.</p>';return;}
+  let h='<table><tr><th>Fonte</th><th>Ultimo run</th><th>Stato</th><th>Scoperti</th><th>Tentati</th><th>Nuovi</th><th>Rivisitati</th><th>Coda</th></tr>';
+  for(const r of d.runs){
+    const o=r.outcomes||{}; const q=r.queue||{};
+    h+='<tr><td>'+esc(r.source)+'</td><td class="mono">'+esc(r.started_at)+'</td><td>'+esc(r.status)+(r.inferred?' (ricostruito)':'')+'</td><td>'+esc(r.discovered)+'</td><td>'+esc(r.attempted)+'</td><td>'+esc(o.valid_new||0)+'</td><td>'+esc(o.revisit||0)+'</td><td>'+esc(JSON.stringify(q))+'</td></tr>';
+  }
+  h+='</table>';
+  el.innerHTML=h;
 }
 
 async function loadPrices(){
@@ -98,7 +116,7 @@ async function loadPrices(){
   el.innerHTML=h;
 }
 
-loadListings();loadStats();loadCoverage();loadPrices();
+loadListings();loadStats();loadCoverage();loadRuns();loadPrices();
 </script></body></html>
 """
 
