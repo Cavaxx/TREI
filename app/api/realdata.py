@@ -164,6 +164,83 @@ def portals_status() -> dict:
     return {"portals": out, "demo_data": False}
 
 
+@router.get("/macro")
+def macro_series() -> dict:
+    """The two macro series with metadata, exact coverage and last update."""
+    obs = [r for r in _observations() if not r.get("superseded")]
+    out = {}
+    for ind in ("mortgage_rate_new_loans", "cpi_nic_index"):
+        rows = sorted([r for r in obs if r.get("indicator") == ind], key=lambda r: r.get("period") or "")
+        if not rows:
+            out[ind] = {"status": "missing", "count": 0}
+            continue
+        first = rows[0]
+        out[ind] = {
+            "indicator": ind,
+            "source": first.get("source"),
+            "definition": first.get("definition"),
+            "definition_version": first.get("definition_version"),
+            "series": first.get("series"),
+            "unit": first.get("unit"),
+            "geo_level": first.get("geo_level"),
+            "territory_code": first.get("territory_code"),
+            "count": len(rows),
+            "first_period": rows[0].get("period"),
+            "last_period": rows[-1].get("period"),
+            "last_retrieved_at": max(r.get("retrieved_at") or "" for r in rows),
+            "provisional": sum(1 for r in rows if r.get("quality") == "provisional"),
+            "periods": [{"period": r.get("period"), "value": r.get("value")} for r in rows],
+        }
+    return {"series": out, "demo_data": False}
+
+
+@router.get("/deflation")
+def deflation(base_period: str | None = None) -> dict:
+    """Deflate observed asking prices: P_real(t;b) = P_nominal(t) × I(b) / I(t).
+
+    Only listings with a nominal price actually observed in a month whose NIC
+    index is published are deflated. ``base_period`` defaults to the latest
+    published index month. Listing counts and V.07 counts are NEVER touched.
+    """
+    index_rows = [r for r in _observations()
+                  if not r.get("superseded") and r.get("indicator") == "cpi_nic_index"]
+    by_period = {r.get("period"): float(r.get("value")) for r in index_rows if r.get("value") is not None}
+    if not by_period:
+        return {"status": "blocked", "reason": "NIC index not stored", "demo_data": False}
+    base = base_period or max(by_period)
+    if base not in by_period:
+        return {"status": "invalid_base", "reason": f"{base} not in the published index", "demo_data": False}
+    i_base = by_period[base]
+    status = _status_map()
+    out = []
+    for rec in _listings():
+        if status.get(rec.get("key") or "") != "available":
+            continue
+        if (rec.get("unit_class") or "") != "residenziale":
+            continue
+        price = rec.get("price")
+        observed = (rec.get("observed_at") or "")[:7]
+        if not isinstance(price, (int, float)) or price <= 0 or observed not in by_period:
+            continue
+        out.append({
+            "native_id": rec.get("native_id"),
+            "source": rec.get("source"),
+            "comune": rec.get("comune"),
+            "nominal_price": price,
+            "observed_month": observed,
+            "real_price_base": base,
+            "real_price": round(price * i_base / by_period[observed], 2),
+        })
+    return {
+        "base_period": base,
+        "formula": "P_reale(t;b) = P_nominale(t) × I(b) / I(t)",
+        "n_deflated": len(out),
+        "note": "solo prezzi chiesti osservati in mesi con indice NIC pubblicato; i conteggi V.07 non sono mai deflazionati",
+        "items": out,
+        "demo_data": False,
+    }
+
+
 @router.get("/runs")
 def runs_status() -> dict:
     """Last run per source from the persisted run ledger (outcome + queue)."""

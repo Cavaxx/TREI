@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -21,38 +21,62 @@ ECB_MIR_KEY = "MIR.M.IT.B.A2C.A.R.A.2250.EUR.N"
 #: SDMX dataflow is MIR; the resource key excludes the dataflow prefix.
 ECB_MIR_URL = "https://data-api.ecb.europa.eu/service/data/MIR/M.IT.B.A2C.A.R.A.2250.EUR.N?format=csvdata&startPeriod=2015-01"
 
-#: ISTAT NIC monthly index — the SDMX dataflow/endpoint is NOT yet resolved
-#: (sdmx.istat.it returned an SSL error on 2026-10-30). Left empty until a real
-#: dataflow is confirmed; ``fetch_istat_cpi`` reports ``blocked`` rather than
-#: guessing an endpoint.
-ISTAT_CPI_URL = ""
-
 
 def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
-def fetch_ecb_mir(timeout: float = 40.0) -> list[dict]:
-    """Return monthly ECB mortgage-rate observations (period, value)."""
-    resp = httpx.get(ECB_MIR_URL, timeout=timeout, follow_redirects=True)
+def fetch_ecb_mir(*, start_period: str = "2015-01", timeout: float = 40.0) -> list[dict]:
+    """Return monthly ECB mortgage-rate observations (period, value).
+
+    ``start_period`` is the data portal's ``startPeriod`` parameter; the ECB
+    endpoint only returns what it has, so gaps are checked separately.
+    """
+    resp = httpx.get(f"{ECB_MIR_URL.split('?')[0]}?format=csvdata&startPeriod={start_period}",
+                     timeout=timeout, follow_redirects=True)
     resp.raise_for_status()
     rows = list(csv.DictReader(io.StringIO(resp.text)))
     out = []
     for r in rows:
         period = r.get("TIME_PERIOD", "")
         value = r.get("OBS_VALUE", "")
+        flag = r.get("OBS_STATUS", "")
         if not period or value in ("", "NaN"):
             continue
         try:
-            out.append({"period": period, "value": float(value)})
+            out.append({"period": period, "value": float(value), "obs_status": flag})
         except ValueError:
             continue
     return out
 
 
+def _missing_months(periods: list[str]) -> list[str]:
+    """Contiguous-month gaps between the first and last observed period."""
+    if len(periods) < 2:
+        return []
+    out = []
+    cur = datetime.strptime(periods[0], "%Y-%m")
+    end = datetime.strptime(periods[-1], "%Y-%m")
+    have = set(periods)
+    while cur < end:
+        label = cur.strftime("%Y-%m")
+        if label not in have:
+            out.append(label)
+        cur = (cur.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return out
+
+
 def store_ecb_mir(store_path=None) -> dict:
     store = ObservationStore(store_path or PROJECT_ROOT / "data" / "observations.jsonl")
-    rows = fetch_ecb_mir()
+    #: incremental: fetch only from the month after the last stored period.
+    prior = [r for r in store.all() if r.get("indicator") == "mortgage_rate_new_loans"]
+    periods = sorted({r.get("period") for r in prior if r.get("period")})
+    start = "2015-01"
+    if periods:
+        last = datetime.strptime(periods[-1], "%Y-%m")
+        nxt = (last.replace(day=1) + timedelta(days=32)).replace(day=1)
+        start = nxt.strftime("%Y-%m")
+    rows = fetch_ecb_mir(start_period=start)
     run_id = "ecb-" + _now_iso().replace(":", "").replace("-", "")[:14]
     stored = 0
     for r in rows:
@@ -74,57 +98,31 @@ def store_ecb_mir(store_path=None) -> dict:
         )
         if store.upsert(obs).get("stored"):
             stored += 1
-    return {"series": ECB_MIR_KEY, "rows": len(rows), "stored": stored, "run_id": run_id}
+    all_periods = sorted({r.get("period") for r in store.all()
+                          if r.get("indicator") == "mortgage_rate_new_loans" and r.get("period")})
+    return {
+        "series": ECB_MIR_KEY,
+        "rows": len(rows),
+        "stored": stored,
+        "run_id": run_id,
+        "fetched_from": start,
+        "first_period": all_periods[0] if all_periods else None,
+        "last_period": all_periods[-1] if all_periods else None,
+        "missing_months": _missing_months(all_periods),
+    }
 
 
 def fetch_istat_cpi(timeout: float = 40.0) -> list[dict]:
-    """ISTAT NIC index: returns [] when the endpoint is not yet resolved."""
-    if not ISTAT_CPI_URL:
-        return []
-    resp = httpx.get(ISTAT_CPI_URL, timeout=timeout, follow_redirects=True)
-    if resp.status_code != 200:
-        return []
-    rows = list(csv.DictReader(io.StringIO(resp.text)))
-    out = []
-    for r in rows:
-        period = r.get("TIME_PERIOD", "") or r.get("TIME", "")
-        value = r.get("OBS_VALUE", "") or r.get("OBS", "")
-        if not period or value in ("", "NaN"):
-            continue
-        try:
-            out.append({"period": period, "value": float(value)})
-        except ValueError:
-            continue
-    return out
+    """ISTAT NIC monthly index (levels, base 2015=100) via IstatData SDMX."""
+    from app.acquisition.connectors.istat_nic import fetch_istat_nic
+
+    return [{"period": r["period"], "value": r["value"]} for r in fetch_istat_nic()]
 
 
 def store_istat_cpi(store_path=None) -> dict:
-    store = ObservationStore(store_path or PROJECT_ROOT / "data" / "observations.jsonl")
-    rows = fetch_istat_cpi()
-    if not rows:
-        return {"series": "ISTAT_NIC", "rows": 0, "stored": 0, "status": "blocked", "reason": "sdmx.istat.it SSL error 2026-10-30; endpoint not resolved"}
-    run_id = "istat-" + _now_iso().replace(":", "").replace("-", "")[:14]
-    stored = 0
-    for r in rows:
-        obs = Observation(
-            source="ISTAT",
-            source_url=ISTAT_CPI_URL,
-            retrieved_at=_now_iso(),
-            period=r["period"],
-            territory_code="IT",
-            geo_level="national",
-            indicator="cpi_nic_index",
-            value=r["value"],
-            unit="index",
-            definition="Indice nazionale dei prezzi al consumo per l'intera collettivita' (NIC) - Italia",
-            definition_version="NIC",
-            series="ISTAT_NIC",
-            run_id=run_id,
-            quality="ok",
-        )
-        if store.upsert(obs).get("stored"):
-            stored += 1
-    return {"series": "ISTAT_NIC", "rows": len(rows), "stored": stored, "run_id": run_id, "status": "ok"}
+    from app.acquisition.connectors.istat_nic import store_istat_nic
+
+    return store_istat_nic(store_path=store_path)
 
 
 def run_macro(*, store_path=None) -> dict:

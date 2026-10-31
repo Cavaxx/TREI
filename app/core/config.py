@@ -200,6 +200,14 @@ class Settings:
     kernel_standby_timeout_seconds: int = field(
         default_factory=lambda: _env_int("TREI_KERNEL_STANDBY_TIMEOUT_SECONDS", 60)
     )
+    #: ISTAT SDMX minimum interval between queries (official limit: 5/minute).
+    istat_min_interval_seconds: float = field(
+        default_factory=lambda: _env_float("TREI_ISTAT_MIN_INTERVAL_SECONDS", 15.0)
+    )
+    #: Per-portal cap on detail pages fetched in one Kernel portal run.
+    portal_max_listings: int = field(
+        default_factory=lambda: _env_int("TREI_PORTAL_MAX_LISTINGS", 12)
+    )
     browser_navigation_timeout_ms: int = field(
         default_factory=lambda: _env_int("TREI_BROWSER_NAVIGATION_TIMEOUT_MS", 30_000)
     )

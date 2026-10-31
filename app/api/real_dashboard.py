@@ -40,6 +40,7 @@ button{padding:.3rem .8rem;border:1px solid #333;border-radius:4px;background:#f
 </div>
 
 <div class="sec"><h2>Statistiche</h2><div id="stats"></div></div>
+<div class="sec"><h2>Serie macro (BCE / ISTAT NIC)</h2><div id="macro"></div></div>
 <div class="sec"><h2>Copertura</h2><div id="coverage"></div></div>
 <div class="sec"><h2>Ultimo run per fonte</h2><div id="runs"></div></div>
 <div class="sec"><h2>€/m² (mediana campione, solo disponibili residenziali)</h2><div id="prices"></div></div>
@@ -82,6 +83,39 @@ async function loadStats(){
   el.innerHTML=h;
 }
 
+function svgLine(points){
+  if(!points||points.length<2)return '<p class="empty">serie insufficiente</p>';
+  const w=560,h=140,pad=14;
+  const xs=points.map(p=>p.period);
+  const ys=points.map(p=>p.value);
+  const min=Math.min(...ys),max=Math.max(...ys);
+  const X=i=>pad+i*(w-2*pad)/(xs.length-1);
+  const Y=v=>h-pad-(v-min)*(h-2*pad)/((max-min)||1);
+  let path=points.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(p.value).toFixed(1)).join(' ');
+  let h='<svg width="'+w+'" height="'+h+'" style="background:#fafafa;border:1px solid #ddd">';
+  h+='<path d="'+path+'" fill="none" stroke="#06c" stroke-width="1.5"/>';
+  h+='<text x="'+pad+'" y="12" font-size="10" fill="#444">'+esc(xs[0])+'</text>';
+  h+='<text x="'+(w-pad-90)+'" y="12" font-size="10" fill="#444">'+esc(xs[xs.length-1])+'</text>';
+  h+='<text x="'+(w-pad-60)+'" y="'+(h-4)+'" font-size="10" fill="#444">min '+min.toFixed(2)+' / max '+max.toFixed(2)+'</text>';
+  h+='</svg>';
+  return h;
+}
+
+async function loadMacro(){
+  const d=await j('/api/v1/real/macro');
+  const el=document.getElementById('macro');
+  if(!d||!d.series){el.innerHTML='<p class="empty">Non disponibile.</p>';return;}
+  let h='';
+  for(const [ind,s] of Object.entries(d.series)){
+    if(!s.count){h+='<p class="empty">'+esc(ind)+': serie non acquisita.</p>';continue;}
+    h+='<h3>'+esc(ind)+' <span class="muted">('+esc(s.source)+', '+esc(s.unit)+', '+esc(s.definition_version||'')+')</span></h3>';
+    h+='<p class="muted">'+esc(s.first_period)+' → '+esc(s.last_period)+' · '+s.count+' osservazioni'+(s.provisional?' · provvisorie: '+s.provisional:'')+' · ultimo aggiornamento '+esc(s.last_retrieved_at)+'</p>';
+    const tail=s.periods.slice(-36);
+    h+=svgLine(tail);
+  }
+  el.innerHTML=h;
+}
+
 async function loadCoverage(){
   const d=await j('/api/v1/real/coverage');
   const el=document.getElementById('coverage');
@@ -116,7 +150,7 @@ async function loadPrices(){
   el.innerHTML=h;
 }
 
-loadListings();loadStats();loadCoverage();loadRuns();loadPrices();
+loadListings();loadStats();loadMacro();loadCoverage();loadRuns();loadPrices();
 </script></body></html>
 """
 

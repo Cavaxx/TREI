@@ -85,6 +85,9 @@ cron-install: ## Install the DST-safe TREI daily entry (backs up first)
 cron-disable: ## Remove ONLY the # TREI-DAILY entry (backs up first, refuses ambiguity)
 	$(PY) -m app.scheduler.cronops disable
 
+portal-run: ## Run one authorized portal (SRC=idealista_it|subito_it|immobiliare_it) via Kernel
+	$(PY) -c "import sys; from app.acquisition.connectors.portals import run_portal_pilot; import json; print(json.dumps(run_portal_pilot(source='$(SRC)'), ensure_ascii=False, indent=2))"
+
 up: ## Start the container stack
 	docker compose -f docker/docker-compose.yml up --build
 

@@ -610,7 +610,7 @@ def run_listings_pilot(*, store_path=None, max_listings: int | None = None, sour
     retryable = sum(1 for u, o in ((m["url"], m["outcome"]) for m in report["manifest"]) if o in RETRYABLE_OUTCOMES)
     terminal = sum(1 for m in report["manifest"] if m["outcome"] in TERMINAL_OUTCOMES)
     report["queue"] = {
-        "pending": max(0, limit - len(report["manifest"])),
+        "pending": max(0, min(limit, len(urls)) - attempted),
         "retryable_errors": retryable,
         "budget_deferred": deferred,
         "terminal": terminal,
@@ -797,7 +797,7 @@ def run_gabetti_pilot(*, store_path=None, max_listings: int | None = None, sourc
     retryable = sum(1 for m in report["manifest"] if m["outcome"] in RETRYABLE_OUTCOMES)
     terminal = sum(1 for m in report["manifest"] if m["outcome"] in TERMINAL_OUTCOMES)
     report["queue"] = {
-        "pending": max(0, limit - len(report["manifest"])),
+        "pending": max(0, min(limit, len(urls)) - attempted),
         "retryable_errors": retryable,
         "budget_deferred": deferred,
         "terminal": terminal,
