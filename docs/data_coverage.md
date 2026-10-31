@@ -15,7 +15,7 @@ Fonte: Istat / ISPAT. Navigazione ASP.NET cookieless (richiede browser).
 | compravendite_residenziali (abitazione ed accessori) | provincia ITH20 | 2000, 2005, 2010, 2015, 2019–2023 | unità immobiliari; la vista online mostra anni selezionati, non l'intero 2000–2023 |
 | compravendite_economiche (artigianale/commerciale/industriale/ufficio/rurale) | provincia ITH20 | idem | unità immobiliari |
 | mutui (con ipoteca immobiliare) | provincia ITH20 | idem | numero di mutui |
-| households (famiglie) | 16 comunità di valle + Provincia | 1990, 2010, 2015, 2020, 2023, 2024 | la vista online mostra 6 annate, non l'intero 1990–2024 |
+| households (famiglie) | 16 comunità di valle + Provincia | 1990, 2000, 2005, 2010, 2013, 2014 (annuario 2014), 2015, 2020, 2023, 2024 | 10 annate × 17 territori = 170 osservazioni; 2013/2014 dall'annuario 2014 (tav. I.28, pagina PDF 84); nessuna differenza tra edizioni su 1990/2010 |
 
 **Lacune documentate** (invariate rispetto al 29/10, nuova sessione 31/10 interrotta prima del collaudo dell'indice: da rifare con `TREI_ALLOW_BROWSER=true`):
 - La serie completa 2000–2023 (compravendite/mutui) e 1990–2024 (famiglie) **non
@@ -60,8 +60,43 @@ HTTP semplice: serve browser e non rientra nell'autorizzazione dei 3 portali).
 
 | Serie | Fonte | Chiave | Osservazioni | Stato |
 |---|---|---|---|---|
-| Tassi mutui nuove operazioni (Italia) | BCE | MIR.M.IT.B.A2C.A.R.A.2250.EUR.N | 140 (mensile 2015-01–2026-08, nessun mese mancante) | acquisita; aggiornamento incrementale verificato (run 31/10: 0 nuovi, ultimo 2026-08) |
-| Indice NIC (Italia) | ISTAT | 167_744_DF_DCSP_NIC1B2015_1 / M.IT.39.4.000000 | 0 | bloccato: metadata ok, endpoint dati SDMX 404 su 8 varianti (evidenza in run); fallback: export CSV/XLSX ufficiale o databrowser via Kernel |
+| Tassi mutui nuove operazioni (Italia) | BCE | MIR.M.IT.B.A2C.A.R.A.2250.EUR.N | 140 (mensile 2015-01–2026-08, nessun mese mancante) | acquisita; aggiornamento incrementale (fetched_from=2026-09, 0 nuovi: ultimo pubblicato 2026-08) |
+| IPCA/HICP Italia, totale (ECOICOP v2) | Eurostat | prc_hicp_minr, unit I25 (base 2025=100) | 141 (mensile 2015-01–2026-09, 0 mesi mancanti) | acquisita; verificata vs ISTAT Tabella_8 su 3 mesi (99.0/98.5/104.9); reimport idempotente (stored=0); JSON-stat decodificato con id/size/index |
+| Indice NIC (Italia, compresi tabacchi) | ISTAT | Tabella_6 serie09_2026.xlsx | 25 mensili (2024-09–2026-09): 16 base 2015 + 9 base 2025 | acquisita dall'allegato ufficiale; basi mai concatenate, coefficienti di raccordo (1.075, 1.226) nei metadati; medie annuali (30) mai importate come mensili; serie completa dal 2015: lacuna da completare dagli allegati d'archivio |
+
+**Deflazione** (`/api/v1/real/deflation`): P_reale(t;b) = P_nominale × I(b)/I(t) con
+indice reale importato (HICP I25 di default). Mese senza indice pubblicato →
+stato esplicito `indice del mese non ancora disponibile` (mai approssimato con
+il mese adiacente). Sui dati reali attuali n=0 perché tutti gli annunci sono
+stati osservati a ottobre 2026 (HICP pubblicato fino a settembre 2026):
+261 annunci riportati come mese senza indice, nessuna dimostrazione fabbricata.
+
+## Classificazione riconciliata (31/10)
+
+264 ID registrati (257 tecnocasa_it + 7 gabetti_it), contract `vendita` per
+tutti. Per `unit_class`: 262 residenziali, 1 commerciale (negozio), 1
+ricettivo (hotel). Disponibili (regola condivisa): 263 = 261 residenziali +
+1 commerciale + 1 ricettivo; 1 `to_reconfirm` (61174027). Il «191+1+1=193»
+del report precedente era lo stato alla migrazione iniziale, non il totale.
+
+## Cron (verificato, non osservato in avvio futuro)
+
+Il run del 31/10 alle 07:15 UTC appartiene alla vecchia riga (`15 7 * * *` con
+`CRON_TZ` ignorato da cron 3.0pl1: sistema in UTC → 08:15 Roma). La riga
+corrente è DST-safe: `15 5,6 * * * [ "$(TZ=Europe/Rome date +\%H:\%M)" = "07:15" ] && …`
+→ prossimo avvio atteso 06:15 UTC (inverno) / 05:15 UTC (estate) = 07:15 Roma.
+`next_run_at` del checkpoint calcola lo stesso orario (funzione `next_cron_run`).
+
+## Portali (stato 31/10)
+
+Kernel entitlements verificati (read-only): piano HOBBYIST attivo, managed
+proxies abilitati, custom proxies disabilitati — lo stealth (proxy ISP gestito)
+è tecnicamente disponibile. Le pagine vuote dei portali NON derivano dai limiti
+del piano. Diagnosi per portale con screenshot/iframe/errori JS prevista
+(`run_portal_pilot` + `search_debug`); il secondo tentativo diagnostico su
+idealista è stato interrotto dall'operatore: causa ancora indeterminata, da
+classificare con la procedura di diagnosi (budget 20 min, 2 tentativi diversi).
+
 
 ## Definizioni condivise (store = API = UI = export)
 

@@ -68,7 +68,7 @@ def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None 
         return {"status": "locked", "reason": "another daily job is already running", "checkpoint": checkpoint_path}
 
     started = _now_iso()
-    report = {"status": "completed", "started_at": started, "sources": {}, "errors": []}
+    report = {"status": "completed", "started_at": started, "sources": {}, "macro": None, "errors": []}
     try:
         from app.acquisition.listings import run_gabetti_pilot, run_listings_pilot
 
@@ -89,6 +89,15 @@ def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None 
             except Exception as exc:  # noqa: BLE001
                 report["sources"][name] = {"status": "failed", "error": str(exc)}
                 report["errors"].append({"source": name, "error": str(exc)})
+        #: macro series (ECB incremental, NIC xlsx, Eurostat HICP): one step,
+        #: each series isolated so a failure never blocks the others.
+        try:
+            from app.acquisition.macro import run_macro
+
+            report["macro"] = run_macro()
+        except Exception as exc:  # noqa: BLE001
+            report["macro"] = {"status": "failed", "error": str(exc)}
+            report["errors"].append({"source": "macro", "error": str(exc)})
     finally:
         report["finished_at"] = _now_iso()
         report["next_run_at"] = next_cron_run().isoformat()

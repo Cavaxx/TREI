@@ -93,6 +93,22 @@ class ObservationStore:
             self._rewrite()
         return changed
 
+    def purge(self, *, where) -> int:
+        """Physically remove superseded records matching ``where``.
+
+        Used by controlled data migrations when superseded rows are plain
+        parser artefacts (never official revisions). Non-superseded records
+        matching ``where`` are kept. Returns the removed count."""
+        kept = [r for r in self._records if not (r.get("superseded") and where(r))]
+        removed = len(self._records) - len(kept)
+        if removed:
+            self._records = kept
+            self._by_key = {}
+            for rec in self._records:
+                self._by_key.setdefault(rec.get("key", ""), []).append(rec)
+            self._rewrite()
+        return removed
+
     def _rewrite(self) -> None:
         if self.path is None:
             return

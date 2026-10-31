@@ -119,10 +119,25 @@ def parse_nic_monthly(path: Path | None = None) -> dict:
     }
 
 
-def store_nic_from_xlsx(store_path=None) -> dict:
+def reconcile_nic(store_path=None) -> dict:
+    """Align stored NIC rows with the current official attachment.
+
+    After a parser fix, stale rows (misread years, duplicates) may linger.
+    The reconciliation supersedes every NIC row, physically purges the
+    superseded ones (they are parser artefacts, not official revisions) and
+    leaves an empty NIC slate for ``store_nic_from_xlsx``.
+    """
     store = ObservationStore(store_path or PROJECT_ROOT / "data" / "observations.jsonl")
+    store.supersede(where=lambda r: r.get("indicator") == "cpi_nic_index",
+                    reason="reconcile Tabella_6 serie09_2026 (2026-10-31)")
+    purged = store.purge(where=lambda r: r.get("indicator") == "cpi_nic_index")
+    return {"purged": purged}
+
+
+def store_nic_from_xlsx(store_path=None) -> dict:
     parsed = parse_nic_monthly()
     months = parsed["months"]
+    store = ObservationStore(store_path or PROJECT_ROOT / "data" / "observations.jsonl")
     run_id = "istat-xlsx-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     stored = revised = 0
     for m in months:
