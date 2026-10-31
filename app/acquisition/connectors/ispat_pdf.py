@@ -30,6 +30,7 @@ PDF_URL = (
     "%20di%20carattere%20generale/annuari%20statistici/Annuario%20statistico%202014/AnnStat2014.pdf"
 )
 FAMIGLIE_DEFINITION = "Numero di famiglie per comunità di valle (tav. I.28, Annuario statistico 2014, ed. 2015, Fonte Istat-ISPAT)"
+PROVINCE_CODE = "ITH20"
 
 
 def _now_iso() -> str:
@@ -117,3 +118,83 @@ def store_i28_2014(store_path=None) -> dict:
         "edition_diffs": edition_diffs,
         "run_id": run_id,
     }
+
+
+def parse_v7_2014(pdf_path: Path | None = None) -> list[dict]:
+    """Parse TAV. V.7 (annuario 2014, PDF page index 206): rows year -> 3 values.
+
+    Columns: compravendite residenziali (abitazione ed accessori),
+    compravendite ad uso economico, mutui con ipoteca immobiliare.
+    """
+    import pypdf
+
+    reader = pypdf.PdfReader(pdf_path or PDF_PATH)
+    text = reader.pages[206].extract_text() or ""
+    rows = []
+    for line in text.splitlines():
+        m = re.match(r"^(\d{4})\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)$", line.strip())
+        if not m:
+            continue
+        vals = [_it_num(v) for v in m.groups()[1:]]
+        if any(v is None for v in vals):
+            continue
+        rows.append({"year": m.group(1), "residenziali": vals[0],
+                     "economiche": vals[1], "mutui": vals[2]})
+    return rows
+
+
+def store_v7_2014(store_path=None) -> dict:
+    """Import the V.7 years missing from the store; overlapping years are
+    compared across editions and never overwritten."""
+    store = ObservationStore(store_path or PROJECT_ROOT / "data" / "observations.jsonl")
+    rows = parse_v7_2014()
+    existing = {}
+    for r in store.all():
+        if r.get("indicator") in ("compravendite_residenziali", "compravendite_economiche", "mutui"):
+            existing.setdefault((r.get("indicator"), r.get("period")), []).append(r.get("value"))
+
+    run_id = "ispat-pdf-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+    stored = 0
+    diffs: list[dict] = []
+    specs = [
+        ("compravendite_residenziali", "residenziali",
+         "Compravendite di unita' immobiliari ad uso abitazione ed accessori (tav. V.7, Annuario statistico 2014, ed. 2015, Fonte Istat)",
+         "unita_immobiliari", "ISPAT_COMPRAVENDITE"),
+        ("compravendite_economiche", "economiche",
+         "Compravendite di unita' immobiliari ad uso economico: artigianale, commerciale, industriale, ufficio, rurale (tav. V.7, Annuario statistico 2014, ed. 2015, Fonte Istat)",
+         "unita_immobiliari", "ISPAT_COMPRAVENDITE"),
+        ("mutui", "mutui",
+         "Mutui con costituzione di ipoteca immobiliare (tav. V.7, Annuario statistico 2014, ed. 2015, Fonte Istat)",
+         "count", "ISPAT_MUTUI"),
+    ]
+    for row in rows:
+        for indicator, field, definition, unit, series in specs:
+            value = row[field]
+            prior = existing.get((indicator, row["year"]))
+            if prior:
+                if abs(prior[-1] - value) > 0.5:
+                    diffs.append({"indicator": indicator, "year": row["year"],
+                                  "stored": prior[-1], "edition_2014": value})
+                continue  # overlapping years are compared, never overwritten
+            obs = Observation(
+                source="ISPAT",
+                source_url=PDF_URL,
+                retrieved_at=_now_iso(),
+                period=row["year"],
+                territory_code=PROVINCE_CODE,
+                geo_level="province",
+                indicator=indicator,
+                value=value,
+                unit=unit,
+                definition=definition,
+                definition_version="V.7|Annuario statistico 2014 (ed. 2015)",
+                published_at="2015",
+                series=series,
+                run_id=run_id,
+                quality="ok",
+                row_ref=f"tav. V.7 riga {row['year']}",
+            )
+            if store.upsert(obs).get("stored"):
+                stored += 1
+    return {"rows": len(rows), "stored": stored, "edition_diffs": diffs, "run_id": run_id}
+
