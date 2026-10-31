@@ -120,14 +120,20 @@ def fetch_istat_cpi(timeout: float = 40.0) -> list[dict]:
 
 
 def store_istat_cpi(store_path=None) -> dict:
-    from app.acquisition.connectors.istat_nic import store_istat_nic
+    """ISTAT NIC from the official communiqué attachment (monthly window).
 
-    return store_istat_nic(store_path=store_path)
+    The SDMX data endpoint on esploradati failed with 404 on 8 variants
+    (evidence in the 31/10 runs): do not retry the same channel. The official
+    xlsx attachment is the working channel.
+    """
+    from app.acquisition.connectors.istat_nic_xlsx import store_nic_from_xlsx
+
+    return store_nic_from_xlsx(store_path=store_path)
 
 
 def run_macro(*, store_path=None) -> dict:
-    """Fetch and store the two macro series; each failure is reported separately."""
-    report = {"ecb": None, "istat": None}
+    """Fetch and store the macro series; each failure is reported separately."""
+    report = {"ecb": None, "istat": None, "hicp": None}
     try:
         report["ecb"] = store_ecb_mir(store_path)
     except Exception as exc:  # noqa: BLE001
@@ -136,4 +142,10 @@ def run_macro(*, store_path=None) -> dict:
         report["istat"] = store_istat_cpi(store_path)
     except Exception as exc:  # noqa: BLE001
         report["istat"] = {"status": "failed", "error": str(exc)}
+    try:
+        from app.acquisition.connectors.eurostat_hicp import store_hicp
+
+        report["hicp"] = store_hicp(store_path)
+    except Exception as exc:  # noqa: BLE001
+        report["hicp"] = {"status": "failed", "error": str(exc)}
     return report

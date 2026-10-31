@@ -25,6 +25,8 @@ db = ["SQLAlchemy>=2.0", "GeoAlchemy2>=0.15", "psycopg[binary]>=3.1", "redis>=5.
 # Kernel remote-browser adapter. Kept optional so offline tests and the core
 # install without it; the adapter imports it lazily.
 browser = ["kernel==0.132.0"]
+#: Official-file parsers (ISTAT xlsx communiqué attachments, ISPAT PDFs).
+sources = ["openpyxl>=3.1", "pypdf>=6.0"]
 
 [project.scripts]
 trei-fetch = "app.fetchers.cli:main"
