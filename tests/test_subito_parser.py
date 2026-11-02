@@ -75,4 +75,4 @@ def test_monthly_instalment_is_not_total_price():
     #: parser must not silently convert it into the total price.
     listing = parse_subito_item(item, source="subito_it", run_id="r1")
     assert listing.price == 480.0  # structural field wins; body text is provenance
-    assert "rata mensile" in l.description
+    assert "rata mensile" in listing.description
