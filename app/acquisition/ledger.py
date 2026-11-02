@@ -61,7 +61,8 @@ def _load_lines(path: Path) -> list[dict]:
     if not path.exists():
         return []
     out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    #: split on '\n' only (U+2028/U+2029 must not split JSON strings)
+    for line in path.read_text(encoding="utf-8").split("\n"):
         if line.strip():
             out.append(json.loads(line))
     return out

@@ -156,9 +156,13 @@ class ListingStore:
     def _load(self) -> None:
         if not self.path.exists():
             return
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                self._records.append(json.loads(line))
+        #: split on '\n' only: splitlines() would also split on U+2028/U+2029
+        #: line separators that can legally appear inside JSON strings and
+        #: corrupt the journal on read.
+        for line in self.path.read_text(encoding="utf-8").split("\n"):
+            if not line.strip():
+                continue
+            self._records.append(json.loads(line))
 
     def _content_records(self, key: str) -> list[dict]:
         """Content/state records for a key (a visit is NOT a content record)."""

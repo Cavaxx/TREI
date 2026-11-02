@@ -144,7 +144,7 @@ def parse_subito_item(item: dict, *, source: str, run_id: str) -> Listing | None
         bathrooms=bathrooms,
         energy_class=_feat_value(features, "/energy_class"),
         published_at=str(item.get("date") or ""),
-        description=re.sub(r"\s+", " ", body)[:2000].strip(),
+        description=re.sub(r"[\u2028\u2029\x0b\x0c\r]+", " ", re.sub(r"\s+", " ", body)[:2000].strip()),
         content_hash="subito-" + native_id,
         run_id=run_id,
         parser_version="subito-0.1.0",

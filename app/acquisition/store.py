@@ -25,7 +25,8 @@ class ObservationStore:
     def _load(self) -> None:
         if not self.path.exists():
             return
-        for line in self.path.read_text(encoding="utf-8").splitlines():
+        #: split on '\n' only (see ListingStore._load for the U+2028 rationale)
+        for line in self.path.read_text(encoding="utf-8").split("\n"):
             if not line.strip():
                 continue
             rec = json.loads(line)

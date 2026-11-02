@@ -138,7 +138,7 @@ def parse_casetrentine_detail(html: str, *, url: str, source: str, run_id: str) 
         bedrooms=bedrooms,
         bathrooms=bathrooms,
         energy_class=energy_m.group(1) if energy_m else "",
-        description=description,
+        description=re.sub(r"[\u2028\u2029\x0b\x0c\r]+", " ", description),
         content_hash="ct-" + native_id,
         run_id=run_id,
         parser_version="casetrentine-0.1.0",
