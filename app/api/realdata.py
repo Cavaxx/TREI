@@ -391,6 +391,7 @@ def coverage() -> dict:
     by_source: dict[str, int] = {}
     by_status: dict[str, int] = {}
     by_unit_class: dict[str, int] = {}
+    by_offer_kind: dict[str, int] = {}
     missing: dict[str, int] = {}
     for r in listings:
         st = status.get(r.get("key") or "", "uncertain")
@@ -400,6 +401,8 @@ def coverage() -> dict:
         by_comune[r.get("comune") or "?"] = by_comune.get(r.get("comune") or "?", 0) + 1
         by_source[r.get("source") or "?"] = by_source.get(r.get("source") or "?", 0) + 1
         by_unit_class[r.get("unit_class") or "?"] = by_unit_class.get(r.get("unit_class") or "?", 0) + 1
+        if r.get("offer_kind"):
+            by_offer_kind[r.get("offer_kind")] = by_offer_kind.get(r.get("offer_kind"), 0) + 1
         for field in ("price", "surface_m2", "typology", "published_at"):
             if r.get(field) in (None, ""):
                 missing[field] = missing.get(field, 0) + 1
@@ -411,6 +414,7 @@ def coverage() -> dict:
         "available_by_comune": by_comune,
         "available_by_source": by_source,
         "available_by_unit_class": by_unit_class,
+        "available_by_offer_kind": by_offer_kind,
         "missing_fields": missing,
         "statistical_observations": len(obs),
         "statistical_indicators": sorted({r.get("indicator") for r in obs}),
@@ -423,7 +427,8 @@ def prices(comune: str | None = None, min_n: int = Query(1, ge=1)) -> dict:
     status = _status_map()
     rows = [r for r in _listings()
             if status.get(r.get("key") or "") == "available"
-            and (r.get("unit_class") or "") == "residenziale"]
+            and (r.get("unit_class") or "") == "residenziale"
+            and not r.get("offer_kind")]
     if comune:
         rows = [r for r in rows if (r.get("comune") or "").lower() == comune.lower()]
     groups: dict[str, list[float]] = {}
@@ -460,7 +465,7 @@ def export_data(
     if format == "json":
         return {"count": filtered["count"], "items": items, "status_breakdown": filtered["status_breakdown"], "demo_data": False}
 
-    fields = ["source", "native_id", "url", "title", "typology", "contract", "unit_class", "comune", "province", "price", "currency", "price_qualifier", "previous_price", "discount", "surface_m2", "surface_definition", "rooms", "bedrooms", "bathrooms", "floor", "elevator", "energy_class", "published_at", "observed_at", "first_seen_at", "last_seen_at", "price_m2", "status"]
+    fields = ["source", "native_id", "url", "title", "typology", "contract", "unit_class", "offer_kind", "advertiser", "comune", "province", "price", "currency", "price_qualifier", "previous_price", "discount", "surface_m2", "surface_definition", "rooms", "bedrooms", "bathrooms", "floor", "elevator", "energy_class", "published_at", "observed_at", "first_seen_at", "last_seen_at", "price_m2", "status"]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()

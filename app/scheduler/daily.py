@@ -70,11 +70,18 @@ def run_daily(*, checkpoint_path=None, lock_path=None, max_listings: int | None 
     started = _now_iso()
     report = {"status": "completed", "started_at": started, "sources": {}, "macro": None, "errors": []}
     try:
+        from app.acquisition.connectors.casetrentine import run_casetrentine_pilot
+        from app.acquisition.connectors.subito import run_subito_pilot
         from app.acquisition.listings import run_gabetti_pilot, run_listings_pilot
 
-        for name, runner in (("tecnocasa_it", run_listings_pilot), ("gabetti_it", run_gabetti_pilot)):
+        for name, runner, kwargs in (
+            ("tecnocasa_it", run_listings_pilot, {}),
+            ("gabetti_it", run_gabetti_pilot, {}),
+            ("subito_it", run_subito_pilot, {}),
+            ("casetrentine_it", run_casetrentine_pilot, {}),
+        ):
             try:
-                r = runner(max_listings=limit)
+                r = runner(max_listings=limit, **kwargs)
                 report["sources"][name] = {
                     "status": r.get("status"),
                     "records": r.get("records"),

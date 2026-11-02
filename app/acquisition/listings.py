@@ -40,6 +40,8 @@ class Listing:
     typology: str = ""
     contract: str = "vendita"
     unit_class: str = ""
+    offer_kind: str = ""
+    advertiser: str = ""
     price: float | None = None
     currency: str = "EUR"
     price_qualifier: str = ""
