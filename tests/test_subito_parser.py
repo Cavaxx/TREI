@@ -30,15 +30,15 @@ def _item(**over):
 
 
 def test_parse_subito_item_core_fields():
-    l = parse_subito_item(_item(), source="subito_it", run_id="r1")
-    assert l is not None
-    assert l.native_id == "666802004"
-    assert l.price == 288000.0
-    assert l.surface_m2 == 113.0
-    assert l.rooms == 4 and l.bathrooms == 2
-    assert l.comune == "Villa Lagarina" and l.province == "TN"
-    assert l.unit_class == "residenziale"
-    assert l.advertiser == "STUDIO CASA ROVERETO"
+    listing = parse_subito_item(_item(), source="subito_it", run_id="r1")
+    assert listing is not None
+    assert listing.native_id == "666802004"
+    assert listing.price == 288000.0
+    assert listing.surface_m2 == 113.0
+    assert listing.rooms == 4 and listing.bathrooms == 2
+    assert listing.comune == "Villa Lagarina" and listing.province == "TN"
+    assert listing.unit_class == "residenziale"
+    assert listing.advertiser == "STUDIO CASA ROVERETO"
 
 
 def test_bolzano_excluded():
@@ -52,9 +52,9 @@ def test_price_on_request_is_none_not_zero():
     item["subject"] = "Appartamento a Trento"
     item["body"] = "Prezzo su richiesta"
     item["features"] = {"/price": {"values": [{"key": "0", "value": "Prezzo su richiesta"}]}}
-    l = parse_subito_item(item, source="subito_it", run_id="r1")
-    assert l is not None and l.price is None
-    assert l.price_qualifier == "su richiesta"
+    listing = parse_subito_item(item, source="subito_it", run_id="r1")
+    assert listing is not None and listing.price is None
+    assert listing.price_qualifier == "su richiesta"
 
 
 def test_offer_kind_markers():
@@ -63,8 +63,8 @@ def test_offer_kind_markers():
     assert _offer_kind("", "multiproprietà settimana") == "multiproprieta"
     item = _item()
     item["body"] = "nuda proprietà"
-    l = parse_subito_item(item, source="subito_it", run_id="r1")
-    assert l.offer_kind == "nuda_proprieta"
+    listing = parse_subito_item(item, source="subito_it", run_id="r1")
+    assert listing.offer_kind == "nuda_proprieta"
 
 
 def test_monthly_instalment_is_not_total_price():
@@ -73,6 +73,6 @@ def test_monthly_instalment_is_not_total_price():
     item["body"] = "rata mensile 480 €"
     #: body does not claim a total: the only figure is the instalment; the
     #: parser must not silently convert it into the total price.
-    l = parse_subito_item(item, source="subito_it", run_id="r1")
-    assert l.price == 480.0  # structural field wins; body text is provenance
+    listing = parse_subito_item(item, source="subito_it", run_id="r1")
+    assert listing.price == 480.0  # structural field wins; body text is provenance
     assert "rata mensile" in l.description
