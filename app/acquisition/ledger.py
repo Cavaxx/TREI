@@ -143,22 +143,49 @@ def availability(*, store_records: list[dict], source: str | None = None,
     runs = RunLedger(runs_path)
     status = StatusLedger(status_path)
 
+    #: Read both ledgers ONCE and index them. The classification loop below
+    #: does per-URL lookups; re-reading the status file inside the loop (as
+    #: ``events_for``/``not_available_events`` do) is O(listings × file) and
+    #: freezes the request once the archive holds thousands of listings.
+    run_rows = runs.all()
+    latest_complete: dict[str, dict] = {}
+    latest_any: dict[str, dict] = {}
+    for r in run_rows:
+        src = r.get("source")
+        if not src:
+            continue
+        if r.get("complete"):
+            if src not in latest_complete or (r.get("started_at") or "") > (
+                latest_complete[src].get("started_at") or ""
+            ):
+                latest_complete[src] = r
+        if src not in latest_any or (r.get("started_at") or "") > (
+            latest_any[src].get("started_at") or ""
+        ):
+            latest_any[src] = r
+
+    events_by_url: dict[str, list[dict]] = {}
+    events_by_run: dict[str, list[dict]] = {}
+    for e in status.all():
+        events_by_url.setdefault(e.get("url") or "", []).append(e)
+        events_by_run.setdefault(e.get("run_id") or "", []).append(e)
+
     out: dict[str, str] = {}
     sources = {source} if source else {r.get("source") for r in store_records}
     for src in sources:
-        latest_complete = runs.latest_complete_for(src)
-        latest_any = runs.latest_for(src)
+        latest_complete_run = latest_complete.get(src)
+        latest_any_run = latest_any.get(src)
         complete_urls: set[str] = set()
         complete_discovered: set[str] = set()
         complete_at: datetime | None = None
-        if latest_complete:
-            complete_at = _parse_dt(latest_complete.get("started_at"))
-            complete_urls = {e.get("url") for e in status.all()
-                             if e.get("run_id") == latest_complete.get("run_id")
-                             and e.get("outcome") in SUCCESS_OUTCOMES}
-            complete_discovered = set(latest_complete.get("discovered_urls") or [])
-        last_run_urls = {e.get("url") for e in status.all()
-                         if latest_any and e.get("run_id") == latest_any.get("run_id")}
+        if latest_complete_run:
+            complete_at = _parse_dt(latest_complete_run.get("started_at"))
+            complete_urls = {e.get("url") for e in events_by_run.get(latest_complete_run.get("run_id"), [])
+                             if e.get("outcome") in SUCCESS_OUTCOMES}
+            complete_discovered = set(latest_complete_run.get("discovered_urls") or [])
+        last_run_urls: set[str] = set()
+        if latest_any_run:
+            last_run_urls = {e.get("url") for e in events_by_run.get(latest_any_run.get("run_id"), [])}
 
         for rec in store_records:
             if rec.get("source") != src:
@@ -168,7 +195,8 @@ def availability(*, store_records: list[dict], source: str | None = None,
             if url in complete_urls:
                 out[key] = "available"
                 continue
-            dead = status.not_available_events(url)
+            url_events = events_by_url.get(url, [])
+            dead = [e for e in url_events if e.get("outcome") in TERMINAL_OUTCOMES]
             if dead:
                 dates = sorted(d for e in dead if (d := _parse_dt(e.get("observed_at") or "")))
                 if len(dead) >= 3 and dates and (dates[-1] - dates[0]).days >= 7 and complete_discovered and url not in complete_discovered:
@@ -181,7 +209,7 @@ def availability(*, store_records: list[dict], source: str | None = None,
                 continue
             # No complete run for this source yet: freshness window on the
             # last successful visit decides between available and uncertain.
-            ok_events = [e for e in status.events_for(url) if e.get("outcome") in SUCCESS_OUTCOMES]
+            ok_events = [e for e in url_events if e.get("outcome") in SUCCESS_OUTCOMES]
             last_ok = max((_parse_dt(e.get("observed_at") or "") for e in ok_events), default=None)
             if complete_at is None:
                 cutoff = now - timedelta(hours=FRESH_HOURS)

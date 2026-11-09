@@ -66,6 +66,12 @@ services:
       TREI_ALLOW_LIVE_FETCH: "false"
     ports:
       - "8000:8000"
+    volumes:
+      #: read-only mount of the host acquisition directory (the cron job
+      #: writes ./data on the VM): the API reads listings/observations and
+      #: the run/status journals directly. Data stays OUT of the image and
+      #: OUT of Git.
+      - ../data:/app/data:ro
     depends_on:
       postgres:
         condition: service_healthy

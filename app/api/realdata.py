@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import statistics as _stats
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -64,25 +65,114 @@ def _csv_safe(value) -> str:
     return text
 
 
-@router.get("/listings")
-def list_listings(
-    comune: str | None = None,
-    source: str | None = None,
-    typology: str | None = None,
-    unit_class: str | None = None,
-    availability: str | None = None,
-    price_min: float | None = None,
-    price_max: float | None = None,
-    surface_min: float | None = None,
-    surface_max: float | None = None,
-    sort: str = Query("observed_at", pattern="^(observed_at|price|price_m2|comune)$"),
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-) -> dict:
-    out = []
+#: Convenience (vantaggio percentuale) — the FIRST usable ordering metric.
+#: vantage = 100 × (1 − €/m² listing / median €/m² of comparable listings).
+#: Comparables: available, residential, full-ownership (no offer_kind),
+#: positive price and valid surface, same typology, surface within ±20%.
+#: Zone level is used when it has ≥10 usable comparables, otherwise the whole
+#: comune (same typology and band); the level used is reported per listing.
+VALUE_MIN_COMPARABLES = 10
+VALUE_SURFACE_BAND = 0.20
+
+
+def value_scores(items: list[dict], *, min_n: int = VALUE_MIN_COMPARABLES,
+                 band: float = VALUE_SURFACE_BAND) -> dict[str, dict]:
+    """Compute a ``{key: score dict}`` for EVERY input record.
+
+    Eligible comparables are available residential full-ownership listings with
+    a positive price and a valid surface. Anything else (auctions, quotas,
+    multi-ownership, bare ownership, or missing/invalid price or surface) gets
+    ``vantage_pct=None`` plus a readable reason, and is never used as a
+    comparable. A listing never counts as its own comparable.
+    """
+
+    def _eligible(r: dict) -> bool:
+        return ((r.get("unit_class") or "") == "residenziale"
+                and not r.get("offer_kind")
+                and isinstance(r.get("price"), (int, float)) and r["price"] > 0
+                and isinstance(r.get("surface_m2"), (int, float)) and r["surface_m2"] > 0)
+
+    universe = [r for r in items if _eligible(r)]
+    by_zone: dict[tuple, list[dict]] = {}
+    by_comune: dict[tuple, list[dict]] = {}
+    for r in universe:
+        comune = (r.get("comune") or "").lower()
+        zona = (r.get("zone") or "").strip().lower()
+        typ = (r.get("typology") or "").lower()
+        by_zone.setdefault((comune, zona, typ), []).append(r)
+        by_comune.setdefault((comune, typ), []).append(r)
+
+    def _comparable_pm2(pool: list[dict], rec: dict) -> list[float]:
+        s = rec["surface_m2"]
+        return [r["price"] / r["surface_m2"] for r in pool
+                if r.get("key") != rec.get("key")
+                and abs(r["surface_m2"] - s) / s <= band]
+
+    excluded_reason = ("fuori dal perimetro del confronto (asta, quota, "
+                       "multiproprietà, nuda proprietà o dati mancanti)")
+    out: dict[str, dict] = {}
+    for rec in items:
+        key = rec.get("key") or ""
+        if not _eligible(rec):
+            out[key] = {
+                "vantage_pct": None,
+                "median_eur_m2": None,
+                "comparables": None,
+                "level": None,
+                "band": f"±{int(band * 100)}%",
+                "min_comparables": min_n,
+                "reason": excluded_reason,
+            }
+            continue
+        comune = (rec.get("comune") or "").lower()
+        zona = (rec.get("zone") or "").strip().lower()
+        typ = (rec.get("typology") or "").lower()
+        zone_pool = by_zone.get((comune, zona, typ), [])
+        vals = _comparable_pm2(zone_pool, rec)
+        level = "zona"
+        if len(vals) < min_n:
+            comune_pool = by_comune.get((comune, typ), [])
+            vals = _comparable_pm2(comune_pool, rec)
+            level = "comune"
+        if len(vals) < min_n:
+            out[key] = {
+                "vantage_pct": None,
+                "median_eur_m2": None,
+                "comparables": len(vals),
+                "level": level,
+                "band": f"±{int(band * 100)}%",
+                "min_comparables": min_n,
+                "reason": f"campione insufficiente: {len(vals)} comparabili utilizzabili (minimo {min_n})",
+            }
+            continue
+        median = _stats.median(vals)
+        pm2 = rec["price"] / rec["surface_m2"]
+        out[key] = {
+            "vantage_pct": round(100 * (1 - pm2 / median), 2),
+            "median_eur_m2": round(median, 2),
+            "comparables": len(vals),
+            "level": level,
+            "band": f"±{int(band * 100)}%",
+            "min_comparables": min_n,
+            "reason": None,
+        }
+    return out
+
+
+
+def _listings_query(*, comune=None, zone=None, source=None, typology=None,
+                    unit_class=None, availability=None, price_min=None,
+                    price_max=None, surface_min=None, surface_max=None,
+                    sort: str = "observed_at", direction: str = "desc",
+                    with_scores: bool = True) -> list[dict]:
+    """Filter, score and sort the whole matching set (no pagination here)."""
     status = _status_map()
+    out = []
     for rec in _listings():
         if comune and (rec.get("comune") or "").lower() != comune.lower():
+            continue
+        if zone and (zone or "").strip().lower() not in (
+                (rec.get("zone") or "").lower(), (rec.get("comune") or "").lower()):
             continue
         if source and rec.get("source") != source:
             continue
@@ -107,14 +197,99 @@ def list_listings(
         item["status"] = status.get(rec.get("key") or "", "uncertain")
         out.append(item)
 
-    reverse = sort != "comune"
-    out.sort(key=lambda r: (r.get(sort) is None, r.get(sort) or 0), reverse=reverse)
+    scores = value_scores(out) if with_scores else {}
+    for item in out:
+        sc = scores.get(item.get("key") or "")
+        if sc:
+            item["vantage_pct"] = sc["vantage_pct"]
+            item["median_eur_m2"] = sc["median_eur_m2"]
+            item["comparables"] = sc["comparables"]
+            item["comparison_level"] = sc["level"]
+            item["comparison_reason"] = sc["reason"]
+        else:
+            item["vantage_pct"] = None
+            item["median_eur_m2"] = None
+            item["comparables"] = None
+            item["comparison_level"] = None
+            item["comparison_reason"] = ("fuori perimetro del confronto "
+                                         "(es. asta, quota, multiproprietà o dati mancanti)")
+
+    desc = direction != "asc"
+
+    def _tie(r: dict) -> tuple:
+        #: stable tie-break independent of direction, by source then id.
+        return (r.get("source") or "", r.get("native_id") or "")
+
+    def _order(value_of) -> None:
+        #: missing values ALWAYS last in both directions; only the non-missing
+        #: part is reversed, so ties and missing records stay deterministic.
+        present = [r for r in out if value_of(r) is not None]
+        missing = [r for r in out if value_of(r) is None]
+        present.sort(key=lambda r: (value_of(r), _tie(r)), reverse=desc)
+        missing.sort(key=_tie)
+        out[:] = present + missing
+
+    if sort == "value_score":
+        _order(lambda r: r.get("vantage_pct"))
+    elif sort == "zone":
+
+        def _zone_value(r: dict):
+            comune = (r.get("comune") or "").strip().lower()
+            if not comune:
+                return None
+            return (comune, (r.get("zone") or "").strip().lower())
+
+        _order(_zone_value)
+    elif sort == "surface":
+        #: the sort key is ``surface`` but the record field is ``surface_m2``.
+        _order(lambda r: r.get("surface_m2"))
+    else:  # observed_at, comune, price, price_m2 and other fields
+        _order(lambda r: r.get(sort))
+    return out
+
+
+@router.get("/listings")
+def list_listings(
+    comune: str | None = None,
+    zone: str | None = None,
+    source: str | None = None,
+    typology: str | None = None,
+    unit_class: str | None = None,
+    availability: str | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    surface_min: float | None = None,
+    surface_max: float | None = None,
+    sort: str = Query("observed_at",
+                      pattern="^(observed_at|price|price_m2|comune|surface|zone|value_score)$"),
+    direction: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    out = _listings_query(
+        comune=comune, zone=zone, source=source, typology=typology,
+        unit_class=unit_class, availability=availability, price_min=price_min,
+        price_max=price_max, surface_min=surface_min, surface_max=surface_max,
+        sort=sort, direction=direction,
+    )
     total = len(out)
+    page = out[offset : offset + limit]
     summary = {}
     for st in ("available", "to_reconfirm", "confirmed_unavailable", "uncertain"):
         summary[st] = sum(1 for r in out if r.get("status") == st)
-    return {"count": total, "limit": limit, "offset": offset, "items": out[offset : offset + limit],
-            "status_breakdown": summary, "status_labels": STATUS_LABELS, "demo_data": False}
+    return {
+        "count": total,
+        "limit": limit,
+        "offset": offset,
+        "from": offset + 1 if total else 0,
+        "to": min(offset + limit, total),
+        "sort": sort,
+        "direction": direction,
+        "items": page,
+        "status_breakdown": summary,
+        "status_labels": STATUS_LABELS,
+        "demo_data": False,
+    }
 
 
 @router.get("/listings/{native_id}")
@@ -260,6 +435,131 @@ def deflation(base_period: str | None = None, index: str = "hicp") -> dict:
                                   "reason": "indice del mese non ancora disponibile"} for k, v in sorted(months_missing.items())],
         "note": "solo prezzi chiesti osservati in mesi con indice pubblicato; nessun mese adiacente usato come sostituto; i conteggi V.07 non sono mai deflazionati",
         "items": out,
+        "demo_data": False,
+    }
+
+
+@router.get("/health")
+def archive_health() -> dict:
+    """Distinguish: archive missing, unreadable, valid-empty, or ready."""
+    if not LISTINGS_PATH.parent.exists():
+        return {"status": "missing_dir", "message":
+                "directory dati assente: verificare il mount ../data:/app/data:ro "
+                "nel servizio api (docker-compose) o il percorso del job cron", "demo_data": False}
+    if not LISTINGS_PATH.exists():
+        return {"status": "missing_files", "message":
+                "listings.jsonl assente: verificare il mount ../data:/app/data:ro "
+                "o eseguire il job di acquisizione (app.scheduler.daily)", "demo_data": False}
+    try:
+        listings = ListingStore(LISTINGS_PATH).current()
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "unreadable", "message": f"archivio illeggibile: {exc}", "demo_data": False}
+    obs_ok = True
+    obs_count = 0
+    try:
+        obs_count = len(ObservationStore(OBSERVATIONS_PATH).all())
+    except Exception:  # noqa: BLE001
+        obs_ok = False
+    return {
+        "status": "empty" if not listings else "ok",
+        "listings_registered": len(listings),
+        "observations_active": obs_count if obs_ok else None,
+        "observations_readable": obs_ok,
+        "demo_data": False,
+    }
+
+
+@router.get("/listings/{native_id}/analysis")
+def listing_analysis(native_id: str) -> dict:
+    """Convenience breakdown + TREI context indicators for one listing."""
+    store = ListingStore(LISTINGS_PATH)
+    history = store.history(native_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="listing not found")
+    current = history[-1]
+    key = current.get("key") or ""
+    #: read the listings store and compute the status map ONCE — recomputing
+    #: them per listing (as a comprehension over ``_listings()`` would) is
+    #: O(n × file) and freezes the request.
+    all_listings = _listings()
+    status_map = _status_map()
+    status = status_map.get(key, "uncertain")
+    scores = value_scores([dict(r) for r in all_listings])
+    sc = scores.get(key)
+    #: verified price reductions = consecutive content versions with a lower
+    #: numeric price (parser revisions that ADD a previously missing price
+    #: are NOT reductions).
+    cuts = []
+    prev = None
+    for h in history:
+        p = h.get("price")
+        if isinstance(p, (int, float)) and isinstance(prev, (int, float)) and p < prev:
+            cuts.append({"from": prev, "to": p, "at": h.get("observed_at")})
+        if isinstance(p, (int, float)):
+            prev = p
+    first_seen = min((h.get("observed_at") or "") for h in history)
+    last_seen = max((h.get("observed_at") or "") for h in history)
+    obs = [r for r in _observations() if not r.get("superseded")]
+    families = [r for r in obs if r.get("indicator") == "households"]
+    rates = [r for r in obs if r.get("indicator") == "mortgage_rate_new_loans"]
+    hicp = [r for r in obs if r.get("indicator") == "hicp_index"]
+    sold = [r for r in obs if r.get("indicator") == "compravendite_residenziali"]
+    context = {
+        "offer_depth": {
+            "available": status == "available",
+            "source_available_total": sum(
+                1 for r in all_listings
+                if r.get("source") == current.get("source")
+                and status_map.get(r.get("key") or "") == "available"),
+            "note": "profondità dell'offerta osservata per la fonte (non il mercato)",
+        },
+        "permanence_days": {
+            "first_seen_at": first_seen,
+            "last_seen_at": last_seen,
+            "value": (None if not first_seen else
+                      max(0, (datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+                              - datetime.fromisoformat(first_seen.replace("Z", "+00:00"))).days)),
+            "note": "permanenza = giorni dalla prima osservazione; la scomparsa NON è una vendita",
+        },
+        "verified_price_cuts": {"count": len(cuts), "cuts": cuts[-10:],
+                                "note": "solo riduzioni di prezzo tra versioni osservate; "
+                                        "le revisioni del parser CaseTrentine (prezzo aggiunto) sono escluse"},
+        "households": {
+            "available": bool(families),
+            "count": len(families),
+            "periods": sorted({r.get("period") for r in families})[:3] + ["…"] if len(families) > 3 else sorted({r.get("period") for r in families}),
+            "geo": "comunità di valle + Provincia (ISPAT)",
+            "source": "ISPAT",
+        },
+        "compravendite_residenziali": {
+            "available": bool(sold),
+            "count": len(sold),
+            "periods": sorted({r.get("period") for r in sold}),
+            "geo": "provincia ITH20",
+            "source": "ISPAT (tav. V.07, Fonte Istat)",
+        },
+        "mortgage_rates": {
+            "available": bool(rates),
+            "last_period": max((r.get("period") for r in rates), default=None),
+            "unit": "percent_per_annum (AAR/NDER, non TAEG)",
+            "source": "BCE MIR.M.IT.B.A2C.A.R.A.2250.EUR.N",
+        },
+        "inflation": {
+            "available": bool(hicp),
+            "last_period": max((r.get("period") for r in hicp), default=None),
+            "unit": "IPCA/HICP base 2025=100",
+            "source": "Eurostat prc_hicp_minr",
+        },
+    }
+    return {
+        "native_id": native_id,
+        "status": status,
+        "offer_kind": current.get("offer_kind") or "",
+        "convenience": sc,
+        "price_m2": _price_m2(current),
+        "context": context,
+        "note": "la convenienza usa SOLO prezzi chiesti e mediana dei comparabili; "
+                "gli altri parametri forniscono contesto, non entrano nel calcolo",
         "demo_data": False,
     }
 
@@ -449,6 +749,7 @@ def prices(comune: str | None = None, min_n: int = Query(1, ge=1)) -> dict:
 @router.get("/export")
 def export_data(
     comune: str | None = None,
+    zone: str | None = None,
     source: str | None = None,
     unit_class: str | None = None,
     availability: str | None = None,
@@ -456,16 +757,24 @@ def export_data(
     price_max: float | None = None,
     surface_min: float | None = None,
     surface_max: float | None = None,
+    sort: str = Query("observed_at",
+                      pattern="^(observed_at|price|price_m2|comune|surface|zone|value_score)$"),
+    direction: str = Query("desc", pattern="^(asc|desc)$"),
     format: str = Query("csv", pattern="^(csv|json)$"),
 ) -> object:
-    filtered = list_listings(comune=comune, source=source, unit_class=unit_class, availability=availability,
-                             price_min=price_min, price_max=price_max, surface_min=surface_min,
-                             surface_max=surface_max, limit=500, offset=0)
-    items = filtered["items"]
+    #: export reflects the SAME filters and ordering of every matching row
+    #: (no fixed 500-row cap: the page cap applies to the UI table only).
+    items = _listings_query(
+        comune=comune, zone=zone, source=source, unit_class=unit_class,
+        availability=availability, price_min=price_min, price_max=price_max,
+        surface_min=surface_min, surface_max=surface_max, sort=sort,
+        direction=direction,
+    )
     if format == "json":
-        return {"count": filtered["count"], "items": items, "status_breakdown": filtered["status_breakdown"], "demo_data": False}
+        return {"count": len(items), "sort": sort, "direction": direction,
+                "items": items, "demo_data": False}
 
-    fields = ["source", "native_id", "url", "title", "typology", "contract", "unit_class", "offer_kind", "advertiser", "comune", "province", "price", "currency", "price_qualifier", "previous_price", "discount", "surface_m2", "surface_definition", "rooms", "bedrooms", "bathrooms", "floor", "elevator", "energy_class", "published_at", "observed_at", "first_seen_at", "last_seen_at", "price_m2", "status"]
+    fields = ["source", "native_id", "url", "title", "typology", "contract", "unit_class", "offer_kind", "advertiser", "comune", "province", "zone", "price", "currency", "price_qualifier", "previous_price", "discount", "surface_m2", "surface_definition", "rooms", "bedrooms", "bathrooms", "floor", "elevator", "energy_class", "published_at", "observed_at", "first_seen_at", "last_seen_at", "price_m2", "vantage_pct", "median_eur_m2", "comparables", "comparison_level", "status"]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()

@@ -5,10 +5,15 @@ Autonomous Province of Trento**: ingestion, cross-portal deduplication, price
 history, €/m² dashboard, hedonic/comparable valuation, auction analysis and a
 market-regime engine — built **compliance-first**.
 
-> **This repository is an MVP foundation.** No real listings have been ingested
-> yet: the API is seeded with clearly-flagged **synthetic** demo data so the
-> pipeline is demonstrable end-to-end while the legally-verified data sources are
-> onboarded (see `docs/data_sources.md`).
+> **The home page (`/`) serves the real listing archive.** Opening the app shows,
+> immediately, the residential listings observed in the province of Trento from
+> **Tecnocasa, Gabetti, Subito and CaseTrentine** — title, comune and zone, asking
+> price, m², €/m², a "quality of the deal" score, source, and links to the detail
+> card and the original ad. On the operational install (2026-11-09): **1,813
+> listings registered, 1,667 available** (Tecnocasa 256, Gabetti 7, Subito 1,091,
+> CaseTrentine 313). The archive lives in `data/` on the host, is mounted read-only
+> into the API container, and is **not** part of a public clone. The synthetic demo
+> is confined to `/demo`.
 
 ## Guiding principles
 
@@ -34,9 +39,9 @@ market-regime engine — built **compliance-first**.
 
 ```bash
 make install          # create .venv and install dependencies
-make test             # 169 tests, no external services required
+make test             # 244 tests, no external services required
 make lint             # ruff
-make api              # http://localhost:8000  (synthetic demo data)
+make api              # http://localhost:8000  (real listings)
 make cli-list         # source registry + legal status
 make cli-licences     # licence register vs. sources (nothing licensed yet)
 make cli-agent-status # what the Agent Import is allowed to touch (no network)
@@ -49,6 +54,27 @@ channels: `email-ingest`, `agent-import`, `auction-fetcher`, `scheduler`):
 ```bash
 make up               # docker compose -f docker/docker-compose.yml up --build
 ```
+
+### Docker (single startup path)
+
+From the repository root, one command builds and starts the whole stack:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
+The `api` service mounts the host acquisition directory **read-only**
+(`../data:/app/data:ro`), so the API reads the real `listings.jsonl`,
+`observations.jsonl` and the run/status journals directly — the data never
+enters the image or Git. Once up:
+
+- Home (real listings): http://localhost:8000/  (redirects to `/real`)
+- Legacy demo:          http://localhost:8000/demo
+- API docs (Swagger):   http://localhost:8000/docs
+
+The stack needs PostgreSQL+PostGIS, Redis and MinIO. MinIO (AIStor) still
+requires a local licence at `secrets/minio.license` (see `.env.example`). Through
+**VS Code Remote SSH**, forward port **8000** to browse the home page locally.
 
 ## Layout
 
@@ -102,6 +128,35 @@ data/raw/         raw-object data lake (generated, git-ignored)
 | POST | `/api/v1/forecast/directional` | P(up/flat/down) or INSUFFICIENT_EVIDENCE |
 | POST | `/api/v1/scenarios/run` | shock propagation |
 | POST | `/api/v1/affordability` | mortgage affordability |
+
+## Real listings: filters, ordering, "quality of the deal"
+
+The home table is filtered server-side and ordered in both directions by four
+orderings:
+
+| Ordering | Meaning |
+| --- | --- |
+| Price | asking price in euro, ascending / descending |
+| Surface | m², ascending / descending |
+| Zone | alphabetical by comune (normalised) then zone/fraction, A–Z / Z–A |
+| Quality of the deal | relative asking-price advantage, highest first by default |
+
+"Quality of the deal" (convenience) is the first usable ordering metric:
+
+```text
+vantage_% = 100 × (1 − €/m² listing / median €/m² of comparables)
+```
+
+Comparables are available residential full-ownership listings with a positive
+price and valid surface, same typology, surface within ±20% and at least 10
+usable comparables — first at zone level, falling back to comune level (the
+level used is reported per listing). Auctions, quotas, multi-ownership and bare
+ownership remain viewable with dedicated labels but are excluded from the
+standard comparison. When the price is on request, the surface unusable, or the
+sample too small, the score is null with a readable reason. The other TREI
+parameters (offer depth, permanence, verified price cuts, households, sales,
+mortgage rates, inflation) are shown on the detail card as context and are still
+maturing.
 
 ## Documentation
 

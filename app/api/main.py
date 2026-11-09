@@ -408,8 +408,16 @@ def macro_context_endpoint(req: schemas.MacroPanelRequest) -> dict:
     }
 
 
-@app.get("/", response_class=HTMLResponse, tags=["ops"])
-def dashboard() -> str:
+@app.get("/", tags=["ops"])
+def home_redirect():
+    """Home = real listings archive; the old synthetic demo stays at /demo."""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url="/real", status_code=307)
+
+
+@app.get("/demo", response_class=HTMLResponse, tags=["ops"])
+def demo_dashboard() -> str:
     return DASHBOARD_HTML
 
 
